@@ -58,8 +58,10 @@ export function StartMenu({ onStart, theme, onThemeChange, savedGame, onContinue
     <motion.div
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
-      className="min-h-full w-full flex flex-col items-center justify-center px-6 py-12 safe-top safe-bottom"
+      className="h-full w-full overflow-y-auto no-scrollbar"
     >
+      {/* min-h-full + justify-center: centered when it fits, scrolls when it doesn't */}
+      <div className="min-h-full w-full flex flex-col items-center justify-center px-6 py-12 safe-top safe-bottom">
       <div className="max-w-md w-full">
         {/* Title block */}
         <div className="text-center mb-10">
@@ -176,6 +178,7 @@ export function StartMenu({ onStart, theme, onThemeChange, savedGame, onContinue
             </div>
           )}
         </div>
+      </div>
       </div>
 
       <HowToPlayModal open={showHowTo} onClose={() => setShowHowTo(false)} />
