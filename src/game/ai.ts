@@ -40,6 +40,7 @@ export function chooseAIMove(state: GameState): AIMove {
     return { type: 'flipFaceDown', slot: chooseFaceDownSlot(player, difficulty) };
   }
 
+  const rules = state.rules;
   const top = topOfPile(state.pile);
   const tier = activeTier(player);
   const pool = buildPool(player, tier);
@@ -52,20 +53,26 @@ export function chooseAIMove(state: GameState): AIMove {
   const byRank = groupByRank(pool);
 
   function capForRank(rank: string): number {
-    if (rank === '10') return 1;
-    if (top && top.rank === rank) {
+    if (rules.tenBurns && rank === '10') return 1;
+    if (rules.fourOfAKindSwipes && top && top.rank === rank) {
       const onTop = countSameRankOnTop(state.pile, top.rank);
       return Math.max(0, 4 - onTop);
     }
     return 4;
   }
 
-  // 1) Equal-or-lower plays (excluding 10s — handle separately).
-  const legalLowerRanks: string[] = [];
+  // 1) Equal-or-lower plays (excluding burning 10s — handled separately).
+  let legalLowerRanks: string[] = [];
   for (const [rank, items] of byRank) {
-    if (rank === '10') continue;
+    if (rules.tenBurns && rank === '10') continue;
     const sample = items[0].card;
-    if (isEqualOrLower(sample, top)) legalLowerRanks.push(rank);
+    if (isEqualOrLower(sample, top, rules)) legalLowerRanks.push(rank);
+  }
+
+  // With 2s-reset active, a 2 is always legal — save it for when it's the only out.
+  if (rules.twosReset && legalLowerRanks.length > 1 && difficulty !== 'easy') {
+    const withoutTwos = legalLowerRanks.filter(r => r !== '2');
+    if (withoutTwos.length > 0) legalLowerRanks = withoutTwos;
   }
 
   if (legalLowerRanks.length > 0) {
@@ -88,12 +95,14 @@ export function chooseAIMove(state: GameState): AIMove {
     return { type: 'play', selected };
   }
 
-  // 2) No legal lower play. Consider playing a 10 if available.
-  const tensInPool = pool.filter(s => isTen(s.card));
-  if (tensInPool.length > 0) {
-    const t = tensInPool[0];
-    if (difficulty !== 'easy' || Math.random() > 0.3) {
-      return { type: 'play', selected: [{ card: t.card, source: t.source }] };
+  // 2) No legal lower play. Consider playing a 10 if it burns.
+  if (rules.tenBurns) {
+    const tensInPool = pool.filter(s => isTen(s.card));
+    if (tensInPool.length > 0) {
+      const t = tensInPool[0];
+      if (difficulty !== 'easy' || Math.random() > 0.3) {
+        return { type: 'play', selected: [{ card: t.card, source: t.source }] };
+      }
     }
   }
 
@@ -210,6 +219,8 @@ function shouldEatPile(
   difficulty: string,
 ): boolean {
   if (state.pile.length === 0) return false;
+  // Eating exists to set up a swipe — pointless when swipes are disabled.
+  if (!state.rules.fourOfAKindSwipes) return false;
 
   const heldCards = player.hand.length + player.faceUp.filter(Boolean).length;
   if (heldCards + state.pile.length > 28 && difficulty !== 'hard') return false;

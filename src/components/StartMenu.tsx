@@ -1,9 +1,33 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
 import type { NewGameOptions } from '../game/engine';
-import type { GameState } from '../game/types';
+import type { GameState, HouseRules } from '../game/types';
+import { DEFAULT_RULES } from '../game/rules';
 import type { Theme } from '../theme';
 import { HowToPlayModal } from './Modals';
+
+const RULES_KEY = 'swipe-house-rules';
+
+function loadHouseRules(): HouseRules {
+  try {
+    const raw = localStorage.getItem(RULES_KEY);
+    if (!raw) return DEFAULT_RULES;
+    const parsed = JSON.parse(raw);
+    return {
+      twosReset: typeof parsed.twosReset === 'boolean' ? parsed.twosReset : DEFAULT_RULES.twosReset,
+      tenBurns: typeof parsed.tenBurns === 'boolean' ? parsed.tenBurns : DEFAULT_RULES.tenBurns,
+      fourOfAKindSwipes: typeof parsed.fourOfAKindSwipes === 'boolean' ? parsed.fourOfAKindSwipes : DEFAULT_RULES.fourOfAKindSwipes,
+    };
+  } catch {
+    return DEFAULT_RULES;
+  }
+}
+
+function saveHouseRules(rules: HouseRules) {
+  try {
+    localStorage.setItem(RULES_KEY, JSON.stringify(rules));
+  } catch {}
+}
 
 interface Props {
   onStart: (opts: NewGameOptions) => void;
@@ -18,8 +42,17 @@ export function StartMenu({ onStart, theme, onThemeChange, savedGame, onContinue
   const [numPlayers, setNumPlayers] = useState(4);
   const [targetScore, setTargetScore] = useState<100 | 200 | 300>(100);
   const [difficulty, setDifficulty] = useState<'easy' | 'medium' | 'hard'>('medium');
+  const [rules, setRules] = useState<HouseRules>(loadHouseRules);
   const [showHowTo, setShowHowTo] = useState(false);
   const humanCount = 1; // CPU-only opponents for now
+
+  const setRule = (patch: Partial<HouseRules>) => {
+    setRules(prev => {
+      const next = { ...prev, ...patch };
+      saveHouseRules(next);
+      return next;
+    });
+  };
 
   return (
     <motion.div
@@ -93,11 +126,34 @@ export function StartMenu({ onStart, theme, onThemeChange, savedGame, onContinue
               ))}
             </div>
           </Field>
+
+          <Field label="House rules">
+            <div className="space-y-2">
+              <RuleToggle
+                on={rules.twosReset}
+                onToggle={() => setRule({ twosReset: !rules.twosReset })}
+                title="2s reset the pile"
+                detail="A 2 plays on anything and resets — next card is free."
+              />
+              <RuleToggle
+                on={rules.tenBurns}
+                onToggle={() => setRule({ tenBurns: !rules.tenBurns })}
+                title="10 burns the pile"
+                detail="Off: 10 is a normal card between 9 and Jack."
+              />
+              <RuleToggle
+                on={rules.fourOfAKindSwipes}
+                onToggle={() => setRule({ fourOfAKindSwipes: !rules.fourOfAKindSwipes })}
+                title="Four of a kind swipes"
+                detail="Off: no swipe clears — a grindier, more tactical game."
+              />
+            </div>
+          </Field>
         </div>
 
         <div className="mt-10 space-y-3">
           <button
-            onClick={() => onStart({ numPlayers, humanCount, targetScore, difficulty })}
+            onClick={() => onStart({ numPlayers, humanCount, targetScore, difficulty, rules })}
             className="w-full py-4 bg-brass-500 hover:bg-brass-400 active:bg-brass-600 active:scale-[0.99]
                        text-felt-900 font-display font-bold text-lg tracking-wider uppercase
                        rounded-xl transition-all shadow-lg"
@@ -165,6 +221,29 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <div className="text-xs uppercase tracking-[0.25em] text-brass-400 mb-3 font-bold">{label}</div>
       {children}
     </div>
+  );
+}
+
+function RuleToggle({ on, onToggle, title, detail }: {
+  on: boolean;
+  onToggle: () => void;
+  title: string;
+  detail: string;
+}) {
+  return (
+    <button
+      onClick={onToggle}
+      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-left transition-all active:scale-[0.99] border
+        ${on ? 'bg-felt-700 border-brass-500/50' : 'bg-felt-800/60 border-felt-600'}`}
+    >
+      <div className="flex-1 min-w-0">
+        <div className={`text-sm font-display font-bold ${on ? 'text-bone-100' : 'text-bone-200/60'}`}>{title}</div>
+        <div className="text-[11px] text-bone-200/50 leading-snug">{detail}</div>
+      </div>
+      <div className={`flex-shrink-0 w-10 h-6 rounded-full p-0.5 transition-colors ${on ? 'bg-brass-500' : 'bg-felt-600'}`}>
+        <div className={`w-5 h-5 rounded-full bg-bone-50 shadow transition-transform ${on ? 'translate-x-4' : ''}`} />
+      </div>
+    </button>
   );
 }
 

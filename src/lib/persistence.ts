@@ -5,6 +5,7 @@
  * storage calls for @capacitor/preferences, which survives OS storage eviction.
  */
 import type { GameState } from '../game/types';
+import { DEFAULT_RULES } from '../game/rules';
 
 const KEY = 'swipe-saved-game';
 const VERSION = 1;
@@ -59,6 +60,8 @@ export function loadSavedGame(): GameState | null {
       clearSavedGame();
       return null;
     }
+    // Saves from before house rules existed default to the standard rules
+    if (!s.rules) s.rules = DEFAULT_RULES;
     return s;
   } catch {
     clearSavedGame();

@@ -137,7 +137,7 @@ export function GameBoard({
       const rank = sel.card.rank as Rank;
 
       // Special rule: only one 10 may ever be selected (it burns immediately).
-      if (rank === '10') {
+      if (rank === '10' && state.rules.tenBurns) {
         const existingTen = prev.find(s => s.card.rank === '10');
         if (existingTen) {
           return prev.filter(s => s.card.rank !== '10').concat(sel);
@@ -145,7 +145,7 @@ export function GameBoard({
         return [sel];
       }
 
-      const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank));
+      const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank), state.rules);
       const pool = buildRankPool(player, rank);
 
       // New rank or empty selection: default to all legally playable cards
@@ -173,7 +173,7 @@ export function GameBoard({
 
     const pool = buildRankPool(player, rank);
     const rankCards = cardsOfRank(player, rank as Rank);
-    const maxPlay = maxPlayableOfRank(rank as Rank, state.pile, rankCards);
+    const maxPlay = maxPlayableOfRank(rank as Rank, state.pile, rankCards, state.rules);
     const finalCount = Math.min(desiredCount, pool.length, maxPlay);
 
     playSound('select');
@@ -196,7 +196,7 @@ export function GameBoard({
     // Safety clamp — never send more cards than the rules allow in one play
     const rank = source[0].card.rank as Rank;
     const player = state.players[humanIdx];
-    const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank));
+    const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank), state.rules);
     const toPlay = source.slice(0, max);
     if (toPlay.length === 0) return;
 
@@ -293,8 +293,8 @@ export function GameBoard({
       ...player.faceUp.filter((c): c is Card => c !== null),
     ];
     if (available.length === 0) return false;
-    if (available.some(isTen)) return false;
-    return getLegalLowerRanks(available, topOfPile(state.pile)).size === 0;
+    if (state.rules.tenBurns && available.some(isTen)) return false;
+    return getLegalLowerRanks(available, topOfPile(state.pile), state.rules).size === 0;
   }, [state, selected.length, humanIdx, isHumanTurn]);
 
   const barAction = stuckMustTakePile
@@ -442,7 +442,7 @@ export function GameBoard({
       if (droppedOnPile) {
         const rank = session.sel.card.rank as Rank;
         const player = state.players[humanIdx];
-        const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank));
+        const max = maxPlayableOfRank(rank, state.pile, cardsOfRank(player, rank), state.rules);
         const pool = buildRankPool(player, rank);
         const current = selectedRef.current;
         const hasDragged = current.some(s => s.card.id === session.sel.card.id);
@@ -545,6 +545,7 @@ export function GameBoard({
           dropHighlight={pileDropHighlight}
           armed={barAction.enabled}
           onTap={handleBarPlay}
+          swipesEnabled={state.rules.fourOfAKindSwipes}
           theme={theme}
         />
 
@@ -701,6 +702,54 @@ export function GameBoard({
           })}
         </AnimatePresence>
       </div>
+
+      {/* AI blind-flip reveal — the gamble deserves its moment */}
+      <AnimatePresence>
+        {state.pendingFaceDown && !state.players[state.pendingFaceDown.playerIdx].isHuman && (() => {
+          const pending = state.pendingFaceDown;
+          const flipper = state.players[pending.playerIdx];
+          const top = topOfPile(state.pile);
+          const plays = (state.rules.tenBurns && isTen(pending.card))
+            || isEqualOrLower(pending.card, top, state.rules);
+          return (
+            <motion.div
+              key={pending.card.id}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              className="fixed inset-0 z-[65] bg-black/50 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 pointer-events-none"
+            >
+              <div className="text-sm uppercase tracking-[0.25em] text-bone-200/80">
+                {flipper.name} flips…
+              </div>
+              <motion.div
+                initial={{ rotateY: 180, scale: 0.7 }}
+                animate={{ rotateY: 0, scale: 1.15 }}
+                transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+                style={{ transformPerspective: 700 }}
+              >
+                <PlayingCard card={pending.card} size="lg" theme={theme} />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, y: 6 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.7, duration: 0.25 }}
+                className={`font-display font-bold tracking-wide text-lg ${
+                  plays ? 'text-brass-400' : 'text-oxblood-500'
+                }`}
+              >
+                {state.rules.tenBurns && isTen(pending.card)
+                  ? '🔥 Burns the pile!'
+                  : state.rules.twosReset && pending.card.rank === '2'
+                  ? '↺ Resets the pile!'
+                  : plays
+                  ? 'It plays!'
+                  : 'Too high — takes the pile!'}
+              </motion.div>
+            </motion.div>
+          );
+        })()}
+      </AnimatePresence>
 
       {/* Eat Pile Confirmation */}
       <AnimatePresence>
