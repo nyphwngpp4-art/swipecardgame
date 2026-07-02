@@ -1,9 +1,9 @@
 import { newGame, nextRound, playCards, flipFaceDown, resolveFaceDown, voluntaryEatPile } from '../game/engine';
 import { chooseAIMove } from '../game/ai';
-import type { GameState } from '../game/types';
+import type { GameState, HouseRules } from '../game/types';
 
-function runFullGame(numPlayers: number) {
-  let s: GameState = newGame({ numPlayers, humanCount: 0, targetScore: 100 });
+function runFullGame(numPlayers: number, rules?: HouseRules, label = '') {
+  let s: GameState = newGame({ numPlayers, humanCount: 0, targetScore: 100, rules });
   let totalMoves = 0;
   const maxTotalMoves = 8000;
 
@@ -33,24 +33,33 @@ function runFullGame(numPlayers: number) {
   }
 
   if (s.phase !== 'gameOver') {
-    console.error(`[${numPlayers}p] Did not reach gameOver in ${maxTotalMoves} moves`);
+    console.error(`[${numPlayers}p${label}] Did not reach gameOver in ${maxTotalMoves} moves`);
     return 'stalled';
   }
-  console.log(`[${numPlayers}p] Game over in ${totalMoves} moves, ${s.roundNumber} rounds. Winner: ${s.players[s.gameWinnerIdx!].name} (${s.scores[s.gameWinnerIdx!]}pts)`);
+  console.log(`[${numPlayers}p${label}] Game over in ${totalMoves} moves, ${s.roundNumber} rounds. Winner: ${s.players[s.gameWinnerIdx!].name} (${s.scores[s.gameWinnerIdx!]}pts)`);
   return true;
 }
 
+const VARIANTS: Array<{ rules?: HouseRules; label: string }> = [
+  { rules: undefined, label: '' },
+  { rules: { twosReset: true, tenBurns: true, fourOfAKindSwipes: true }, label: ' 2s-reset' },
+  { rules: { twosReset: false, tenBurns: false, fourOfAKindSwipes: false }, label: ' hardcore' },
+  { rules: { twosReset: true, tenBurns: false, fourOfAKindSwipes: false }, label: ' 2s+hardcore' },
+];
+
 let allOk = true;
-for (const np of [3, 4, 5]) {
-  for (let trial = 0; trial < 3; trial++) {
-    let result = runFullGame(np);
-    // AI-vs-AI games have a small residual chance of a card-cycling stalemate
-    // (no human to break the loop). One stall is bad luck; two in a row is a bug.
-    if (result === 'stalled') {
-      console.log(`[${numPlayers}p] Retrying stalled game with a fresh deal…`);
-      result = runFullGame(np);
+for (const { rules, label } of VARIANTS) {
+  for (const np of label === '' ? [3, 4, 5] : [3, 5]) {
+    for (let trial = 0; trial < (label === '' ? 3 : 2); trial++) {
+      let result = runFullGame(np, rules, label);
+      // AI-vs-AI games have a small residual chance of a card-cycling stalemate
+      // (no human to break the loop). One stall is bad luck; two in a row is a bug.
+      if (result === 'stalled') {
+        console.log(`[${np}p${label}] Retrying stalled game with a fresh deal…`);
+        result = runFullGame(np, rules, label);
+      }
+      if (result !== true) allOk = false;
     }
-    if (result !== true) allOk = false;
   }
 }
 console.log(allOk ? '\n✓ All full-game tests passed' : '\n✗ Failures');

@@ -134,7 +134,8 @@ export function useSwipeGame() {
       playSound('flip');
       haptic(20);
 
-      // Auto-resolve immediately if no matching cards in hand/face-up to chain
+      // No chain possible → auto-resolve, but after a suspense beat so the
+      // player actually witnesses the reveal before the verdict lands
       const newState = r.state;
       const pending = newState.pendingFaceDown;
       if (pending && pending.playerIdx === newState.currentPlayerIdx) {
@@ -143,11 +144,17 @@ export function useSwipeGame() {
         const hasFaceUpMatches = player.faceUp.some(c => c && c.rank === pending.card.rank);
 
         if (!hasHandMatches && !hasFaceUpMatches) {
-          const resolveResult = resolveFaceDown(newState, []);
-          if (resolveResult.ok) {
-            feedbackForTransition(newState, resolveResult.state);
-            return resolveResult.state;
-          }
+          const flippedId = pending.card.id;
+          setTimeout(() => {
+            setState(cur => {
+              // Only resolve if this exact flip is still pending (user may have confirmed)
+              if (!cur || cur.pendingFaceDown?.card.id !== flippedId) return cur;
+              const resolveResult = resolveFaceDown(cur, []);
+              if (!resolveResult.ok) return cur;
+              feedbackForTransition(cur, resolveResult.state);
+              return resolveResult.state;
+            });
+          }, 1100);
         }
       }
       return newState;
@@ -205,23 +212,9 @@ export function useSwipeGame() {
         const r = flipFaceDown(state, move.slot);
         if (r.ok) {
           playSound('flip');
-          // Auto-resolve when there is nothing to chain (same as human tryFlip).
-          const newState = r.state;
-          const pending = newState.pendingFaceDown;
-          if (pending && pending.playerIdx === newState.currentPlayerIdx) {
-            const p = newState.players[newState.currentPlayerIdx];
-            const hasMatches =
-              p.hand.some(c => c.rank === pending.card.rank) ||
-              p.faceUp.some(c => c && c.rank === pending.card.rank);
-            if (!hasMatches) {
-              const resolveResult = resolveFaceDown(newState, []);
-              if (resolveResult.ok) {
-                commit(newState, resolveResult.state);
-                return;
-              }
-            }
-          }
-          setState(newState);
+          // Leave the flip pending — the next loop tick resolves it after the
+          // reveal delay below, giving the blind flip its moment of suspense.
+          setState(r.state);
         } else console.warn('AI illegal flip:', r.reason);
       } else if (move.type === 'eatPile') {
         const r = voluntaryEatPile(state);
@@ -232,7 +225,7 @@ export function useSwipeGame() {
         if (r.ok) commit(state, r.state);
         else console.warn('AI illegal resolve:', r.reason);
       }
-    }, 650 + Math.random() * 550);
+    }, state.pendingFaceDown ? 1500 : 650 + Math.random() * 550);
 
     return () => clearTimeout(t);
   }, [state, commit]);

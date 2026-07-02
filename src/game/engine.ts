@@ -1,7 +1,8 @@
-import type { Card, GameState, Player, SelectedCard } from './types';
+import type { Card, GameState, HouseRules, Player, SelectedCard } from './types';
 import { deal, handSort } from './deck';
 import {
   compareValue,
+  DEFAULT_RULES,
   extractMatchingFromPile,
   hasAnyLegalLowerPlay,
   isEqualOrLower,
@@ -21,6 +22,7 @@ export interface NewGameOptions {
   humanCount: number;
   targetScore: 100 | 200 | 300;
   difficulty?: 'easy' | 'medium' | 'hard';
+  rules?: HouseRules;
 }
 
 function leadLine(name: string): string {
@@ -32,6 +34,7 @@ export function newGame(opts: NewGameOptions): GameState {
   const startingPlayerIdx = Math.floor(Math.random() * players.length);
   return {
     phase: 'playing',
+    rules: opts.rules ?? DEFAULT_RULES,
     players,
     pile: [],
     currentPlayerIdx: startingPlayerIdx,
@@ -170,18 +173,19 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
 
   // Validate: same rank, sane quantity.
   const top = topOfPile(state.pile);
-  const v = validateMultiPlay(cards, top, state.pile);
+  const v = validateMultiPlay(cards, top, state.pile, state.rules);
   if (!v.ok) return { ok: false, reason: v.reason };
 
   // Determine play type.
-  const playingHigher = top !== null && !isTen(cards[0]) && !isEqualOrLower(cards[0], top);
+  const burns = state.rules.tenBurns && isTen(cards[0]);
+  const playingHigher = top !== null && !burns && !isEqualOrLower(cards[0], top, state.rules);
 
   if (playingHigher) {
     // Must only play higher when no equal-or-lower option exists in the active set.
     const available = tier === 'hand'
       ? [...player.hand, ...player.faceUp.filter((c): c is Card => c !== null)]
       : player.faceUp.filter((c): c is Card => c !== null);
-    if (hasAnyLegalLowerPlay(available, top)) {
+    if (hasAnyLegalLowerPlay(available, top, state.rules)) {
       return {
         ok: false,
         reason: 'You have a card equal-or-lower; you must play that instead.',
@@ -212,6 +216,9 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
     ? `${cards[0].rank}${cards[0].suit}`
     : `${cards.length}× ${cards[0].rank}`;
   nextState = logPush(nextState, `${player.name} played ${cardLabel}.`);
+  if (state.rules.twosReset && cards[0].rank === '2' && !playingHigher) {
+    nextState = logPush(nextState, `↺ 2 resets the pile — anything can be played.`);
+  }
 
   // Pickup-on-higher mechanic: pile beneath played cards goes to player's hand,
   // BUT any cards in the pile matching the played rank stay on the new pile.
@@ -258,7 +265,7 @@ function resolvePileAndAdvance(
 
   // 10 burn
   const top = topOfPile(s.pile);
-  if (top && isTen(top)) {
+  if (s.rules.tenBurns && top && isTen(top)) {
     s = { ...s, pile: [] };
     s = logPush(s, `🔥 Pile burned by 10.`);
     // Same player goes again.
@@ -267,7 +274,7 @@ function resolvePileAndAdvance(
   }
 
   // 4-of-a-kind swipe
-  if (isFourOfAKindOnTop(s.pile)) {
+  if (s.rules.fourOfAKindSwipes && isFourOfAKindOnTop(s.pile)) {
     s = { ...s, pile: [] };
     s = logPush(s, `🌀 Four of a kind — pile swiped.`);
     s = { ...s, currentPlayerIdx: actingPlayerIdx };
@@ -350,7 +357,8 @@ export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayRe
 
   const allCards: Card[] = [card, ...chain.map(ch => ch.card)];
   const top = topOfPile(state.pile);
-  const isHigher = top !== null && !isTen(card) && !isEqualOrLower(card, top);
+  const flipBurns = state.rules.tenBurns && isTen(card);
+  const isHigher = top !== null && !flipBurns && !isEqualOrLower(card, top, state.rules);
 
   let newPile: Card[];
   let pickedUp: Card[] = [];

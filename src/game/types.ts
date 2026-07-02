@@ -29,8 +29,19 @@ export interface SelectedCard {
   source: CardSource;
 }
 
+/** Optional rule variants selectable from the start menu. */
+export interface HouseRules {
+  /** 2 can be played on anything and resets the pile — next card is free. */
+  twosReset: boolean;
+  /** 10 burns the pile (default on). Off: 10 is a normal rank valued 10. */
+  tenBurns: boolean;
+  /** Four of a kind on top swipes the pile (default on). */
+  fourOfAKindSwipes: boolean;
+}
+
 export interface GameState {
   phase: Phase;
+  rules: HouseRules;
   players: Player[];
   pile: Card[];                  // top of pile is last element
   currentPlayerIdx: number;

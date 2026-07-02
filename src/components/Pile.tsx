@@ -12,17 +12,19 @@ interface Props {
   /** Selection is ready — pile becomes a tap target that commits the play */
   armed?: boolean;
   onTap?: () => void;
+  /** House rule: four-of-a-kind swipe visuals only shown when the rule is on */
+  swipesEnabled?: boolean;
   theme?: Theme;
 }
 
 export const Pile = forwardRef<HTMLDivElement, Props>(function Pile(
-  { pile, higherFlashKey, dropHighlight = false, armed = false, onTap, theme = 'classic' },
+  { pile, higherFlashKey, dropHighlight = false, armed = false, onTap, swipesEnabled = true, theme = 'classic' },
   ref,
 ) {
   const top = pile.length > 0 ? pile[pile.length - 1] : null;
   const sameRankOnTop = top ? countSameRankOnTop(pile, top.rank) : 0;
-  const fourOfAKind = isFourOfAKindOnTop(pile);
-  const oneFromSwipe = sameRankOnTop === 3;
+  const fourOfAKind = swipesEnabled && isFourOfAKindOnTop(pile);
+  const oneFromSwipe = swipesEnabled && sameRankOnTop === 3;
   const stackPreview = pile.slice(-4, -1);
 
   return (

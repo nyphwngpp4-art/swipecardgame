@@ -1,4 +1,10 @@
-import type { Card, Rank } from './types';
+import type { Card, HouseRules, Rank } from './types';
+
+export const DEFAULT_RULES: HouseRules = {
+  twosReset: false,
+  tenBurns: true,
+  fourOfAKindSwipes: true,
+};
 
 /** Comparison value used for "equal-or-lower" play rule. 10 is special (burn), so undefined. */
 const COMPARE: Record<Rank, number | null> = {
@@ -33,24 +39,35 @@ export function topOfPile(pile: Card[]): Card | null {
   return pile.length === 0 ? null : pile[pile.length - 1];
 }
 
+/** Comparison value under the active rules (a non-burning 10 sits between 9 and J). */
+function valueUnderRules(c: Card, rules: HouseRules): number {
+  if (c.rank === '10' && !rules.tenBurns) return 10;
+  return COMPARE[c.rank] ?? 0;
+}
+
 /** Returns true if the given single card can legally be played as an EQUAL-OR-LOWER play. */
-export function isEqualOrLower(card: Card, top: Card | null): boolean {
+export function isEqualOrLower(card: Card, top: Card | null, rules: HouseRules = DEFAULT_RULES): boolean {
   if (top === null) return true;
-  if (isTen(card)) return true; // 10 is always legal (burns)
-  if (isTen(top)) return true;  // shouldn't happen, but safe default
-  return compareValue(card) <= compareValue(top);
+  if (rules.twosReset && card.rank === '2') return true; // 2 plays on anything
+  if (rules.twosReset && top.rank === '2') return true;  // pile was reset — anything goes
+  if (rules.tenBurns) {
+    if (isTen(card)) return true; // 10 is always legal (burns)
+    if (isTen(top)) return true;  // shouldn't happen, but safe default
+  }
+  return valueUnderRules(card, rules) <= valueUnderRules(top, rules);
 }
 
 /** True if any card in the set could be played equal-or-lower onto the pile. */
-export function hasAnyLegalLowerPlay(cards: Card[], top: Card | null): boolean {
-  return cards.some(c => isEqualOrLower(c, top));
+export function hasAnyLegalLowerPlay(cards: Card[], top: Card | null, rules: HouseRules = DEFAULT_RULES): boolean {
+  return cards.some(c => isEqualOrLower(c, top, rules));
 }
 
 /** Validate a multi-card play: all same rank, and the rank itself is legal vs top. */
 export function validateMultiPlay(
   cards: Card[],
   top: Card | null,
-  pile: Card[]
+  pile: Card[],
+  rules: HouseRules = DEFAULT_RULES
 ): { ok: true } | { ok: false; reason: string } {
   if (cards.length === 0) return { ok: false, reason: 'No cards selected.' };
   const firstRank = cards[0].rank;
@@ -58,13 +75,13 @@ export function validateMultiPlay(
     return { ok: false, reason: 'Multi-card plays must all be the same rank.' };
   }
   // 10s: only one 10 plays at a time (it burns immediately).
-  if (firstRank === '10' && cards.length > 1) {
+  if (rules.tenBurns && firstRank === '10' && cards.length > 1) {
     return { ok: false, reason: 'Only one 10 can be played at a time.' };
   }
 
   // Cap multi-card plays so total same-rank cards on top of pile do not exceed 4.
   // E.g. pile top is a 5; you may play up to 3 more 5s (totaling 4 → swipe).
-  if (top && top.rank === firstRank && firstRank !== '10') {
+  if (rules.fourOfAKindSwipes && top && top.rank === firstRank && !(rules.tenBurns && firstRank === '10')) {
     const sameRankOnTop = countSameRankOnTop(pile, firstRank);
     const maxAdditional = 4 - sameRankOnTop;
     if (cards.length > maxAdditional) {
@@ -96,12 +113,17 @@ export function cardsOfRank(
  * Max cards of this rank the player may include in one play from their pool
  * (hand + face-up). Accounts for cards already on the pile top and the 4-of-a-kind cap.
  */
-export function maxPlayableOfRank(rank: Rank, pile: Card[], availableOfRank: Card[]): number {
+export function maxPlayableOfRank(
+  rank: Rank,
+  pile: Card[],
+  availableOfRank: Card[],
+  rules: HouseRules = DEFAULT_RULES
+): number {
   const poolCount = availableOfRank.length;
   if (poolCount === 0) return 0;
-  if (rank === '10') return 1;
+  if (rules.tenBurns && rank === '10') return 1;
   const top = topOfPile(pile);
-  if (top && top.rank === rank) {
+  if (rules.fourOfAKindSwipes && top && top.rank === rank) {
     const onTop = countSameRankOnTop(pile, rank);
     return Math.min(poolCount, Math.max(0, 4 - onTop));
   }
@@ -146,11 +168,15 @@ export function extractMatchingFromPile(pile: Card[], rank: Rank): {
  * Returns the set of ranks that are currently legal to play as an equal-or-lower move
  * (excluding 10s, which are handled separately as always-legal burns).
  */
-export function getLegalLowerRanks(available: Card[], top: Card | null): Set<Rank> {
+export function getLegalLowerRanks(
+  available: Card[],
+  top: Card | null,
+  rules: HouseRules = DEFAULT_RULES
+): Set<Rank> {
   const ranks = new Set<Rank>();
   for (const c of available) {
-    if (isTen(c)) continue;
-    if (isEqualOrLower(c, top)) ranks.add(c.rank);
+    if (rules.tenBurns && isTen(c)) continue;
+    if (isEqualOrLower(c, top, rules)) ranks.add(c.rank);
   }
   return ranks;
 }

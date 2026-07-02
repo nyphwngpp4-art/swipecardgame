@@ -1,5 +1,6 @@
 import { useMemo, type PointerEvent as ReactPointerEvent } from 'react';
-import type { Card, GameState, Rank, SelectedCard } from '../game/types';
+import { motion } from 'motion/react';
+import type { Card, GameState, HouseRules, Rank, SelectedCard } from '../game/types';
 import { PlayingCard } from './PlayingCard';
 import type { Theme } from '../theme';
 import {
@@ -76,12 +77,13 @@ export function PlayerArea({
       ...player.hand,
       ...player.faceUp.filter((c): c is Card => c !== null),
     ];
-    return getLegalLowerRanks(available, top);
-  }, [state.pile, player.hand, player.faceUp, isMyTurn, pending]);
+    return getLegalLowerRanks(available, top, state.rules);
+  }, [state.pile, state.rules, player.hand, player.faceUp, isMyTurn, pending]);
 
   const hasTenAvailable = useMemo(
-    () => player.hand.some(isTen) || player.faceUp.some(c => c !== null && isTen(c)),
-    [player.hand, player.faceUp]
+    () => state.rules.tenBurns
+      && (player.hand.some(isTen) || player.faceUp.some(c => c !== null && isTen(c))),
+    [player.hand, player.faceUp, state.rules.tenBurns]
   );
 
   // Stuck state: it's your turn, pile has cards, nothing equal-or-lower available
@@ -118,8 +120,23 @@ export function PlayerArea({
         <div className="px-3 py-3 bg-felt-800/90 rounded-xl border border-brass-500/40 shadow-inner">
           <div className="flex items-center gap-3 mb-2">
             <div className="text-xs uppercase tracking-widest text-brass-400">Flipped</div>
-            <PlayingCard card={pending.card} size="sm" theme={theme} />
-            <ChainAdvice pending={pending.card} top={top} />
+            <motion.div
+              key={pending.card.id}
+              initial={{ rotateY: 180, scale: 1.35, y: -6 }}
+              animate={{ rotateY: 0, scale: 1, y: 0 }}
+              transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformPerspective: 600 }}
+            >
+              <PlayingCard card={pending.card} size="sm" theme={theme} />
+            </motion.div>
+            <motion.div
+              key={`advice-${pending.card.id}`}
+              initial={{ opacity: 0, x: -4 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.55, duration: 0.25 }}
+            >
+              <ChainAdvice pending={pending.card} top={top} rules={state.rules} />
+            </motion.div>
           </div>
           {(player.hand.some(c => c.rank === pending.card.rank) || faceUpChainOptions.length > 0) && (
             <div className="mb-2">
@@ -207,7 +224,7 @@ export function PlayerArea({
               // Max selectable across hand + face-up, respecting pile 4-of-a-kind cap
               const maxSelectable = (() => {
                 if (!isMyTurn || pending) return 0;
-                return maxPlayableOfRank(rank as Rank, state.pile, allOfRank);
+                return maxPlayableOfRank(rank as Rank, state.pile, allOfRank, state.rules);
               })();
 
               const toggleHandCard = (c: Card) => {
@@ -398,10 +415,13 @@ export function PlayerArea({
 
 export { deriveAction, ActionBar };
 
-function ChainAdvice({ pending, top }: { pending: Card; top: Card | null }) {
+function ChainAdvice({ pending, top, rules }: { pending: Card; top: Card | null; rules: HouseRules }) {
   if (!top) return <div className="text-xs text-bone-200/60">Empty pile — playable.</div>;
-  if (isTen(pending)) return <div className="text-xs text-brass-400">10 — burns the pile.</div>;
-  if (isEqualOrLower(pending, top)) {
+  if (rules.tenBurns && isTen(pending)) return <div className="text-xs text-brass-400">10 — burns the pile.</div>;
+  if (rules.twosReset && pending.rank === '2') {
+    return <div className="text-xs text-brass-400">2 — resets the pile.</div>;
+  }
+  if (isEqualOrLower(pending, top, rules)) {
     return <div className="text-xs text-bone-200/60">Equal-or-lower — playable.</div>;
   }
   return <div className="text-xs text-oxblood-500">Higher than top — pile pickup.</div>;
@@ -447,6 +467,7 @@ function deriveAction(state: GameState, selected: SelectedCard[], humanIdx: numb
 
   const cards = selected.map(s => s.card);
   const top = topOfPile(state.pile);
+  const rules = state.rules;
 
   const sameRank = cards.every(c => c.rank === cards[0].rank);
   if (!sameRank) {
@@ -457,20 +478,21 @@ function deriveAction(state: GameState, selected: SelectedCard[], humanIdx: numb
     };
   }
 
-  const v = validateMultiPlay(cards, top, state.pile);
+  const v = validateMultiPlay(cards, top, state.pile, rules);
   if (!v.ok) {
     return { label: v.reason, enabled: false, variant: 'disabled' };
   }
 
   const head = cards[0];
-  const playingHigher = top !== null && !isTen(head) && !isEqualOrLower(head, top);
+  const burns = rules.tenBurns && isTen(head);
+  const playingHigher = top !== null && !burns && !isEqualOrLower(head, top, rules);
 
   if (playingHigher) {
     const available: Card[] = [
       ...player.hand,
       ...player.faceUp.filter((c): c is Card => c !== null),
     ];
-    if (hasAnyLegalLowerPlay(available, top)) {
+    if (hasAnyLegalLowerPlay(available, top, rules)) {
       return {
         label: 'You have a lower play available',
         enabled: false,
@@ -488,16 +510,26 @@ function deriveAction(state: GameState, selected: SelectedCard[], humanIdx: numb
     };
   }
 
-  if (isTen(head)) {
+  if (burns) {
     return { label: 'Burn pile with 10', enabled: true, variant: 'play' };
   }
 
-  const willMakeFour = top && top.rank === head.rank
+  const willMakeFour = rules.fourOfAKindSwipes && (top && top.rank === head.rank
     ? countSameRankOnTop(state.pile, head.rank) + cards.length >= 4
-    : cards.length >= 4;
+    : cards.length >= 4);
   if (willMakeFour) {
     return {
       label: cards.length === 1 ? `Play ${head.rank}${head.suit} — SWIPE!` : `Play ${cards.length} × ${head.rank} — SWIPE!`,
+      enabled: true,
+      variant: 'play',
+    };
+  }
+
+  if (rules.twosReset && head.rank === '2' && state.pile.length > 0) {
+    return {
+      label: cards.length === 1
+        ? `Play ${head.rank}${head.suit} — resets pile`
+        : `Play ${cards.length} × 2 — resets pile`,
       enabled: true,
       variant: 'play',
     };
