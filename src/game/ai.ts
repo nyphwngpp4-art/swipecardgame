@@ -240,7 +240,9 @@ function shouldEatPile(
 
   if (bestScore === 0) return false;
 
+  // Small refusal chance on all difficulties — deterministic eat/replay cycles
+  // between AIs can otherwise repeat the same board state forever
   if (difficulty === 'easy') return Math.random() < 0.25;
-  if (difficulty === 'medium') return bestScore >= 50;
-  return bestScore >= 40;
+  if (difficulty === 'medium') return bestScore >= 50 && Math.random() < 0.85;
+  return bestScore >= 40 && Math.random() < 0.9;
 }
