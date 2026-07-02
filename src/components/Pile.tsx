@@ -9,11 +9,14 @@ interface Props {
   pile: Card[];
   higherFlashKey?: number;
   dropHighlight?: boolean;
+  /** Selection is ready — pile becomes a tap target that commits the play */
+  armed?: boolean;
+  onTap?: () => void;
   theme?: Theme;
 }
 
 export const Pile = forwardRef<HTMLDivElement, Props>(function Pile(
-  { pile, higherFlashKey, dropHighlight = false, theme = 'classic' },
+  { pile, higherFlashKey, dropHighlight = false, armed = false, onTap, theme = 'classic' },
   ref,
 ) {
   const top = pile.length > 0 ? pile[pile.length - 1] : null;
@@ -27,9 +30,12 @@ export const Pile = forwardRef<HTMLDivElement, Props>(function Pile(
       <div className="text-xs uppercase tracking-[0.3em] text-bone-200/40">Pile</div>
       <div
         ref={ref}
+        onClick={armed ? onTap : undefined}
         className={`relative w-20 h-28 rounded-lg transition-all duration-150 ${
           dropHighlight
             ? 'ring-2 ring-brass-400 ring-offset-2 ring-offset-felt-900 scale-[1.04]'
+            : armed
+            ? 'cursor-pointer animate-pulse-glow'
             : ''
         }`}
       >

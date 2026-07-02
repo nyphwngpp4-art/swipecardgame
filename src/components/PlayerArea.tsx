@@ -88,7 +88,8 @@ export function PlayerArea({
   const isStuck = isMyTurn && !pending && !handAndFaceUpEmpty
     && state.pile.length > 0 && legalRanks.size === 0;
 
-  // Group hand into smart stacks by rank (include face-up-only ranks too)
+  // Group hand into smart stacks by rank — face-up cards live only in the
+  // table row below (they'd read as duplicates here)
   const handStacks = useMemo(() => {
     const groups = new Map<string, Card[]>();
     for (const c of player.hand) {
@@ -96,15 +97,10 @@ export function PlayerArea({
       arr.push(c);
       groups.set(c.rank, arr);
     }
-    for (const c of player.faceUp) {
-      if (c && !groups.has(c.rank)) groups.set(c.rank, []);
-    }
-    return Array.from(groups.entries()).sort((a, b) => {
-      const aCard = a[1][0] ?? player.faceUp.find(c => c?.rank === a[0])!;
-      const bCard = b[1][0] ?? player.faceUp.find(c => c?.rank === b[0])!;
-      return compareValue(aCard) - compareValue(bCard);
-    });
-  }, [player.hand, player.faceUp]);
+    return Array.from(groups.entries()).sort(
+      (a, b) => compareValue(a[1][0]) - compareValue(b[1][0]),
+    );
+  }, [player.hand]);
 
   const selectedSummary = selected.length > 0
     ? `${selected.length}×${selected[0].card.rank}`
@@ -203,11 +199,7 @@ export function PlayerArea({
           {handStacks.length > 0 ? (
             handStacks.map(([rank, cards]) => {
               const count = cards.length;
-              const faceUpOfRank = player.faceUp.filter(
-                (c): c is Card => c !== null && c.rank === rank,
-              );
               const allOfRank = cardsOfRank(player, rank as Rank);
-              const totalOfRank = allOfRank.length;
               const isRankSelected = selected.some(s => s.card.rank === rank);
               const selectedCountForRank = selected.filter(s => s.card.rank === rank).length;
               const isLegal = legalRanks.has(rank);
@@ -257,11 +249,6 @@ export function PlayerArea({
                       ? count >= 5 ? 'w-[68px]' : count >= 4 ? 'w-[58px]' : count === 0 ? 'w-10' : 'w-10'
                       : count >= 5 ? 'w-[84px]' : count >= 4 ? 'w-[72px]' : count === 0 ? 'w-10' : 'w-14'
                   } ${compact ? 'h-14' : 'h-20'} ${isRankSelected ? 'scale-[1.06]' : ''}`}>
-                    {count === 0 && faceUpOfRank.length > 0 && (
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <PlayingCard card={faceUpOfRank[0]} size={cardSize} theme={theme} dim />
-                      </div>
-                    )}
                     {cards.length > 4 && (
                       <div className="absolute -top-1.5 left-0 z-30 px-1 py-px rounded-full bg-felt-900 border border-brass-500/50 text-[9px] font-bold text-brass-400 tabular-nums">
                         +{cards.length - 4}
@@ -306,14 +293,14 @@ export function PlayerArea({
                     })}
 
                     {/* Count / selected badge — tap to select max legal play or clear */}
-                    {totalOfRank > 1 && (
+                    {count > 1 && (
                       <div
                         onClick={handleBadgeClick}
                         className={`absolute -bottom-1 -right-1 z-20 px-1.5 py-px rounded-full text-[10px] font-bold tabular-nums transition-all cursor-pointer
                           ${selectedCountForRank > 0
                             ? 'bg-brass-400 text-felt-900 scale-110 shadow'
                             : 'bg-felt-800 text-brass-400 border border-brass-600/60'}`}>
-                        {selectedCountForRank > 0 ? selectedCountForRank : totalOfRank}
+                        {selectedCountForRank > 0 ? selectedCountForRank : count}
                       </div>
                     )}
                   </div>
@@ -321,7 +308,7 @@ export function PlayerArea({
                   <div className={`text-center mt-1 text-xs font-display tracking-tight transition-all
                     ${isRankSelected ? 'text-brass-400 font-semibold' : 'text-bone-200/70'}`}>
                     {rank}
-                    {totalOfRank > 1 && <span className="text-[10px] text-bone-200/40 ml-px">×{totalOfRank}</span>}
+                    {count > 1 && <span className="text-[10px] text-bone-200/40 ml-px">×{count}</span>}
                   </div>
                 </div>
               );
@@ -536,7 +523,7 @@ function ActionBar({ action, onPlay, compact = false }: { action: DerivedAction;
   return (
     <div className="px-2">
       <button
-        onClick={action.enabled ? onPlay : undefined}
+        onClick={action.enabled ? () => onPlay() : undefined}
         disabled={!action.enabled}
         className={`
           w-full ${compact ? 'py-3 text-sm' : 'py-[17px] text-[15px]'} rounded-xl font-display font-bold tracking-[0.06em] uppercase

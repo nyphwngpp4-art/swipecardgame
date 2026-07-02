@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Card, GameState, Player, SelectedCard } from '../game/types';
-import { topOfPile, isTen, isEqualOrLower, maxPlayableOfRank, cardsOfRank } from '../game/rules';
+import { topOfPile, isTen, isEqualOrLower, maxPlayableOfRank, cardsOfRank, getLegalLowerRanks } from '../game/rules';
 import type { Rank } from '../game/types';
 import type { GameError } from '../hooks/useSwipeGame';
 import type { Theme } from '../theme';
@@ -189,7 +189,8 @@ export function GameBoard({
   }
 
   const play = useCallback((override?: SelectedCard[]) => {
-    const source = override ?? selectedRef.current;
+    // Guard against DOM event objects arriving via onClick={play}
+    const source = Array.isArray(override) ? override : selectedRef.current;
     if (source.length === 0) return;
 
     // Safety clamp — never send more cards than the rules allow in one play
@@ -281,6 +282,52 @@ export function GameBoard({
     () => deriveAction(state, selected, humanIdx),
     [state, selected, humanIdx],
   );
+
+  // Truly stuck: nothing equal-or-lower and no 10 to burn — the only real move
+  // is taking the pile, so surface it as the primary action instead of a dead button
+  const stuckMustTakePile = useMemo(() => {
+    if (!isHumanTurn || selected.length > 0 || state.pile.length === 0) return false;
+    const player = state.players[humanIdx];
+    const available = [
+      ...player.hand,
+      ...player.faceUp.filter((c): c is Card => c !== null),
+    ];
+    if (available.length === 0) return false;
+    if (available.some(isTen)) return false;
+    return getLegalLowerRanks(available, topOfPile(state.pile)).size === 0;
+  }, [state, selected.length, humanIdx, isHumanTurn]);
+
+  const barAction = stuckMustTakePile
+    ? {
+        label: `Take the pile (${state.pile.length})`,
+        enabled: true,
+        variant: 'pickup' as const,
+        helper: 'No equal-or-lower play available — or play a high card with it.',
+      }
+    : playerAction;
+
+  const handleBarPlay = useCallback(() => {
+    if (stuckMustTakePile) {
+      onEatPile();
+    } else {
+      play();
+    }
+  }, [stuckMustTakePile, onEatPile, play]);
+
+  // Desktop: Enter or Space commits the ready action
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const target = e.target as HTMLElement | null;
+      if (target && ['BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'].includes(target.tagName)) return;
+      if (showPause || showHowTo || showEatConfirm || state.pendingFaceDown) return;
+      if (!barAction.enabled) return;
+      e.preventDefault();
+      handleBarPlay();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [barAction.enabled, handleBarPlay, showPause, showHowTo, showEatConfirm, state.pendingFaceDown]);
 
   function isOverPile(x: number, y: number, pad = 36): boolean {
     const rect = pileTargetRef.current?.getBoundingClientRect();
@@ -496,6 +543,8 @@ export function GameBoard({
           pile={state.pile}
           higherFlashKey={higherFlashKey}
           dropHighlight={pileDropHighlight}
+          armed={barAction.enabled}
+          onTap={handleBarPlay}
           theme={theme}
         />
 
@@ -585,7 +634,7 @@ export function GameBoard({
                 />
               </div>
             </div>
-            <ActionBar action={playerAction} onPlay={play} compact={compact} />
+            <ActionBar action={barAction} onPlay={handleBarPlay} compact={compact} />
           </div>
         )}
       </div>
