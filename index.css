@@ -1,0 +1,192 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+
+  /* Classic (current dark old-timey) */
+  --felt-900: #0F1B14;
+  --felt-800: #142318;
+  --felt-700: #1A2E22;
+  --felt-600: #22392B;
+  --bone-50: #FAF6EC;
+  --bone-100: #F4EDE0;
+  --bone-200: #E8DDC4;
+  --oxblood-500: #A8231F;
+  --oxblood-600: #8B1C19;
+  --oxblood-700: #6F1714;
+  --brass-400: #E8C879;
+  --brass-500: #C9A961;
+  --brass-600: #A38847;
+  --ink: #0A0A0A;
+}
+
+[data-theme="casino"] {
+  /* Vibrant Casino / Cyberpunk fresh look (daughter's request) */
+  --felt-900: #0F1E2E;
+  --felt-800: #162D40;
+  --felt-700: #1E3A52;
+  --felt-600: #274B66;
+  --bone-50: #E8F4FF;
+  --bone-100: #D0E8FF;
+  --bone-200: #A8D0F0;
+  --oxblood-500: #FF2E63;
+  --oxblood-600: #E01E52;
+  --oxblood-700: #C01540;
+  --brass-400: #FFE066;
+  --brass-500: #FFD700;
+  --brass-600: #E6B800;
+  --ink: #0A1420;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* Keep HUD/controls clear of the notch, Dynamic Island and home indicator.
+   Background stays full-bleed; only padded containers use these. */
+.safe-top {
+  padding-top: max(env(safe-area-inset-top), 0.75rem);
+}
+.safe-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.75rem);
+}
+.pb-safe {
+  padding-bottom: max(env(safe-area-inset-bottom), 0.5rem);
+}
+
+/* Horizontal hand strip — must allow pan-x so iOS can scroll the full hand */
+.hand-scroll-row {
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.hand-scroll-row::-webkit-scrollbar {
+  display: none;
+}
+
+/* Game surfaces shouldn't behave like selectable text */
+#root {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+body {
+  font-family: 'DM Sans Variable', 'DM Sans', system-ui, sans-serif;
+  color: var(--bone-100);
+  background:
+    radial-gradient(ellipse at top, var(--felt-700) 0%, var(--felt-900) 60%),
+    var(--felt-900);
+  background-attachment: fixed;
+}
+
+/* Subtle felt-texture noise */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+#root {
+  position: relative;
+  z-index: 1;
+}
+
+.font-display {
+  font-family: 'Fraunces Variable', 'Fraunces', serif;
+  font-feature-settings: "ss01", "ss02";
+}
+
+/* Card faces */
+.suit-red { color: theme('colors.oxblood.500'); }
+.suit-black { color: theme('colors.ink'); }
+
+/* Hide scrollbars on horizontal scrollers */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { scrollbar-width: none; }
+
+/* Card backing pattern */
+.card-back {
+  background:
+    repeating-linear-gradient(45deg, var(--oxblood-700) 0 6px, var(--oxblood-600) 6px 12px),
+    var(--oxblood-700);
+  border: 1px solid var(--brass-500);
+  position: relative;
+}
+.card-back::after {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(201,169,97,0.5);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.shadow-card {
+  box-shadow: 
+    0 4px 12px rgba(0,0,0,0.35),
+    0 1px 3px rgba(0,0,0,0.25),
+    inset 0 1px 0 rgba(255,255,255,0.6);
+}
+/* Selectable shimmer */
+.selected-card {
+  outline: 2px solid var(--brass-400);
+  outline-offset: 2px;
+  transform: translateY(-12px);
+}
+
+button {
+  font-family: inherit;
+}
+
+/* Runtime theme overrides for vibrant casino (applied via data-theme on html) */
+[data-theme="casino"] .bg-felt-900 { background-color: var(--felt-900) !important; }
+[data-theme="casino"] .bg-felt-800 { background-color: var(--felt-800) !important; }
+[data-theme="casino"] .bg-felt-700 { background-color: var(--felt-700) !important; }
+[data-theme="casino"] .bg-felt-600 { background-color: var(--felt-600) !important; }
+
+[data-theme="casino"] .text-bone-50 { color: var(--bone-50) !important; }
+[data-theme="casino"] .text-bone-100 { color: var(--bone-100) !important; }
+[data-theme="casino"] .text-bone-200 { color: var(--bone-200) !important; }
+
+[data-theme="casino"] .text-oxblood-500 { color: var(--oxblood-500) !important; }
+[data-theme="casino"] .text-oxblood-600 { color: var(--oxblood-600) !important; }
+[data-theme="casino"] .text-oxblood-700 { color: var(--oxblood-700) !important; }
+[data-theme="casino"] .bg-oxblood-500 { background-color: var(--oxblood-500) !important; }
+[data-theme="casino"] .bg-oxblood-600 { background-color: var(--oxblood-600) !important; }
+[data-theme="casino"] .bg-oxblood-700 { background-color: var(--oxblood-700) !important; }
+
+[data-theme="casino"] .text-brass-400 { color: var(--brass-400) !important; }
+[data-theme="casino"] .text-brass-500 { color: var(--brass-500) !important; }
+[data-theme="casino"] .text-brass-600 { color: var(--brass-600) !important; }
+[data-theme="casino"] .bg-brass-400 { background-color: var(--brass-400) !important; }
+[data-theme="casino"] .bg-brass-500 { background-color: var(--brass-500) !important; }
+[data-theme="casino"] .bg-brass-600 { background-color: var(--brass-600) !important; }
+
+[data-theme="casino"] .border-brass-400 { border-color: var(--brass-400) !important; }
+[data-theme="casino"] .border-brass-500 { border-color: var(--brass-500) !important; }
+[data-theme="casino"] .border-brass-600 { border-color: var(--brass-600) !important; }
+[data-theme="casino"] .border-oxblood-500 { border-color: var(--oxblood-500) !important; }
+
+[data-theme="casino"] .ring-brass-400 { --tw-ring-color: var(--brass-400) !important; }
+[data-theme="casino"] .ring-oxblood-500 { --tw-ring-color: var(--oxblood-500) !important; }
+
+/* Extra casino pop */
+[data-theme="casino"] .shadow-lg {
+  box-shadow: 0 4px 14px rgba(0,0,0,0.5), 0 0 20px rgba(255, 215, 0, 0.15) !important;
+}
+[data-theme="casino"] .text-brass-400 {
+  text-shadow: 0 0 6px rgba(255, 215, 0, 0.4);
+}
