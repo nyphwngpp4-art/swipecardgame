@@ -77,11 +77,13 @@ interface Props {
   onMainMenu: () => void;
   theme: Theme;
   onThemeChange: (t: Theme) => void;
+  /** Cards the open hint panel is pointing at (error suggestions come via lastError). */
+  hintCardIds?: string[];
 }
 
 export function GameBoard({
   state, onPlay, onFlipFaceDown, onResolveFaceDown, lastError, aiThinkingIdx,
-  onEatPile, onRestart, onMainMenu, theme, onThemeChange,
+  onEatPile, onRestart, onMainMenu, theme, onThemeChange, hintCardIds,
 }: Props) {
   const [selected, setSelected] = useState<SelectedCard[]>([]);
   const [pendingChain, setPendingChain] = useState<SelectedCard[]>([]);
@@ -282,6 +284,13 @@ export function GameBoard({
     () => deriveAction(state, selected, humanIdx),
     [state, selected, humanIdx],
   );
+
+  // Guidance highlights, props-driven: cards named by an illegal-move error or
+  // by the open hint panel glow until the error clears / the panel closes
+  const suggestedIds = useMemo(() => {
+    const ids = [...(lastError?.suggestedCardIds ?? []), ...(hintCardIds ?? [])];
+    return ids.length > 0 ? new Set(ids) : undefined;
+  }, [lastError, hintCardIds]);
 
   // Truly stuck: nothing equal-or-lower and no 10 to burn — the only real move
   // is taking the pile, so surface it as the primary action instead of a dead button
@@ -614,6 +623,7 @@ export function GameBoard({
           onRequestEatPile={() => setShowEatConfirm(true)}
           onCardPointerDown={beginCardDrag}
           draggingCardId={dragSession?.active ? dragSession.card.id : null}
+          suggestedIds={suggestedIds}
           hideActionBar
           compact={compact}
           theme={theme}

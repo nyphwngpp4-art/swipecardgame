@@ -1,5 +1,6 @@
-import type { Card, GameState, HouseRules, Player, SelectedCard } from './types';
+import type { Card, GameEvent, GameMetrics, GameMode, GameState, HouseRules, Player, SelectedCard } from './types';
 import { deal, handSort } from './deck';
+import { createSeededRng, randomSeed } from '../lib/random';
 import {
   compareValue,
   DEFAULT_RULES,
@@ -23,15 +24,35 @@ export interface NewGameOptions {
   targetScore: 100 | 200 | 300;
   difficulty?: 'easy' | 'medium' | 'hard';
   rules?: HouseRules;
+  mode?: GameMode;
+  /** Same seed → same deals every round (daily deal, replays, tests). */
+  seed?: string;
 }
 
 function leadLine(name: string): string {
   return name === 'You' ? 'you lead.' : `${name} leads.`;
 }
 
+export function createMetrics(count: number): GameMetrics {
+  return {
+    burns: Array(count).fill(0),
+    swipes: Array(count).fill(0),
+    pickups: Array(count).fill(0),
+    voluntaryEats: Array(count).fill(0),
+    faceDownSuccesses: Array(count).fill(0),
+    faceDownFailures: Array(count).fill(0),
+    cleanRoundEligible: Array(count).fill(true),
+    roundsWon: Array(count).fill(0),
+    cleanRoundWins: Array(count).fill(0),
+    largestDeficit: 0,
+  };
+}
+
 export function newGame(opts: NewGameOptions): GameState {
-  const players = deal({ numPlayers: opts.numPlayers, humanCount: opts.humanCount });
-  const startingPlayerIdx = Math.floor(Math.random() * players.length);
+  const seed = opts.seed ?? randomSeed(opts.mode ?? 'standard');
+  const rng = createSeededRng(`${seed}-round-1`);
+  const players = deal({ numPlayers: opts.numPlayers, humanCount: opts.humanCount, rng });
+  const startingPlayerIdx = Math.floor(rng() * players.length);
   return {
     phase: 'playing',
     rules: opts.rules ?? DEFAULT_RULES,
@@ -47,6 +68,11 @@ export function newGame(opts: NewGameOptions): GameState {
     pendingFaceDown: null,
     winnerIdxThisRound: null,
     gameWinnerIdx: null,
+    mode: opts.mode ?? 'standard',
+    seed,
+    metrics: createMetrics(players.length),
+    events: [],
+    turnCount: 0,
   };
 }
 
@@ -54,10 +80,13 @@ export function newGame(opts: NewGameOptions): GameState {
 export function nextRound(state: GameState): GameState {
   const numPlayers = state.players.length;
   const humanCount = state.players.filter(p => p.isHuman).length;
-  const players = deal({ numPlayers, humanCount });
+  const seed = state.seed ?? randomSeed('legacy');
+  const rng = createSeededRng(`${seed}-round-${state.roundNumber + 1}`);
+  const players = deal({ numPlayers, humanCount, rng });
   // Preserve names so "Player 2" stays "Player 2"
   players.forEach((p, i) => { p.name = state.players[i].name; });
 
+  const base = state.metrics ?? createMetrics(numPlayers);
   const startingPlayerIdx = state.winnerIdxThisRound ?? state.startingPlayerIdx;
   return {
     ...state,
@@ -70,6 +99,9 @@ export function nextRound(state: GameState): GameState {
     log: [`Round ${state.roundNumber + 1} — ${leadLine(players[startingPlayerIdx].name)}`],
     pendingFaceDown: null,
     winnerIdxThisRound: null,
+    seed,
+    metrics: { ...base, cleanRoundEligible: base.cleanRoundEligible.map(() => true) },
+    events: [],
     // difficulty carried over from ...state
   };
 }
@@ -211,6 +243,8 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
     pile: newPile,
   };
 
+  const events: GameEvent[] = [{ type: 'play', playerIdx: state.currentPlayerIdx }];
+
   // Narrate
   const cardLabel = cards.length === 1
     ? `${cards[0].rank}${cards[0].suit}`
@@ -218,6 +252,7 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
   nextState = logPush(nextState, `${player.name} played ${cardLabel}.`);
   if (state.rules.twosReset && cards[0].rank === '2' && !playingHigher) {
     nextState = logPush(nextState, `↺ 2 resets the pile — anything can be played.`);
+    events.push({ type: 'reset', playerIdx: state.currentPlayerIdx });
   }
 
   // Pickup-on-higher mechanic: pile beneath played cards goes to player's hand,
@@ -241,26 +276,30 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
       nextState,
       `${player.name} picked up ${pickedUp.length} card${pickedUp.length === 1 ? '' : 's'}${keptLabel}.`
     );
+    events.push({ type: 'pickup', playerIdx: state.currentPlayerIdx });
   }
 
-  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, playingHigher) };
+  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, playingHigher, events) };
 }
 
 /**
  * After a play, check for win, 10 burn, 4-of-a-kind swipe.
- * Advances current player if appropriate.
+ * Advances current player if appropriate. Attaches the action's events and
+ * bumps turnCount — every committed action flows through here or returns
+ * via stampAction below.
  */
 function resolvePileAndAdvance(
   state: GameState,
   actingPlayerIdx: number,
-  forcedHigherPickup: boolean
+  forcedHigherPickup: boolean,
+  events: GameEvent[],
 ): GameState {
   let s = state;
 
   // Check win condition first (player emptied all cards).
   const acting = s.players[actingPlayerIdx];
   if (hasNoCards(acting)) {
-    return endRound(s, actingPlayerIdx);
+    return endRound(stampAction(s, events), actingPlayerIdx);
   }
 
   // 10 burn
@@ -268,25 +307,30 @@ function resolvePileAndAdvance(
   if (s.rules.tenBurns && top && isTen(top)) {
     s = { ...s, pile: [] };
     s = logPush(s, `🔥 Pile burned by 10.`);
+    events.push({ type: 'burn', playerIdx: actingPlayerIdx });
     // Same player goes again.
-    s = { ...s, currentPlayerIdx: actingPlayerIdx };
-    return s;
+    return stampAction({ ...s, currentPlayerIdx: actingPlayerIdx }, events);
   }
 
   // 4-of-a-kind swipe
   if (s.rules.fourOfAKindSwipes && isFourOfAKindOnTop(s.pile)) {
     s = { ...s, pile: [] };
     s = logPush(s, `🌀 Four of a kind — pile swiped.`);
-    s = { ...s, currentPlayerIdx: actingPlayerIdx };
-    return s;
+    events.push({ type: 'swipe', playerIdx: actingPlayerIdx });
+    return stampAction({ ...s, currentPlayerIdx: actingPlayerIdx }, events);
   }
 
   // If they played higher and picked up, turn passes (they didn't really get a clean play).
   // Otherwise advance normally.
   if (forcedHigherPickup) {
-    return { ...s, currentPlayerIdx: nextPlayerIdx(s) };
+    return stampAction({ ...s, currentPlayerIdx: nextPlayerIdx(s) }, events);
   }
-  return { ...s, currentPlayerIdx: nextPlayerIdx(s) };
+  return stampAction({ ...s, currentPlayerIdx: nextPlayerIdx(s) }, events);
+}
+
+/** Attach an action's events and advance the monotonic action counter. */
+function stampAction(state: GameState, events: GameEvent[]): GameState {
+  return { ...state, events, turnCount: (state.turnCount ?? 0) + 1 };
 }
 
 /* ------------------------------------------------------------------ */
@@ -313,11 +357,11 @@ export function flipFaceDown(state: GameState, slot: number): PlayResult {
 
   return {
     ok: true,
-    state: {
+    state: stampAction({
       ...state,
       pendingFaceDown: { playerIdx: state.currentPlayerIdx, slot, card },
       log: [`${player.name} flipped a face-down: ${card.rank}${card.suit}.`, ...state.log].slice(0, 12),
-    },
+    }, [{ type: 'flip', playerIdx: state.currentPlayerIdx }]),
   };
 }
 
@@ -381,6 +425,7 @@ export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayRe
     pendingFaceDown: null,
   };
 
+  const events: GameEvent[] = [];
   const chainLabel = chain.length > 0 ? ` + ${chain.length} matching` : '';
   if (isHigher) {
     const keptLabel = kept.length > 0
@@ -390,11 +435,16 @@ export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayRe
       nextState,
       `${player.name} flipped ${card.rank}${chainLabel} — too high; picked up ${pickedUp.length}${keptLabel}.`
     );
+    events.push(
+      { type: 'faceDownFailure', playerIdx: state.currentPlayerIdx },
+      { type: 'pickup', playerIdx: state.currentPlayerIdx },
+    );
   } else {
     nextState = logPush(nextState, `${player.name} flipped ${card.rank}${chainLabel}.`);
+    events.push({ type: 'faceDownSuccess', playerIdx: state.currentPlayerIdx });
   }
 
-  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, isHigher) };
+  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, isHigher, events) };
 }
 
 /** Cancel a pending face-down (only meaningful pre-resolve; here we always require resolve). */
@@ -432,7 +482,7 @@ export function voluntaryEatPile(state: GameState): PlayResult {
   nextState = logPush(nextState, `${player.name} ate the pile (${pileCards.length} cards).`);
 
   // Player stays as current — they can play again (or flip face-downs) with the new hand.
-  return { ok: true, state: nextState };
+  return { ok: true, state: stampAction(nextState, [{ type: 'eat', playerIdx: state.currentPlayerIdx }]) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -465,6 +515,7 @@ function endRound(state: GameState, winnerIdx: number): GameState {
     scores: newScores,
     winnerIdxThisRound: winnerIdx,
     gameWinnerIdx,
+    events: [...(state.events ?? []), { type: 'roundEnd', playerIdx: winnerIdx }],
     log: [
       `${state.players[winnerIdx].name} went out!`,
       ...state.log,

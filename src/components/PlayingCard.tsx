@@ -17,6 +17,7 @@ interface Props {
   layoutId?: string;
   theme?: Theme;
   priority?: boolean; // e.g. face-up card of a currently selected rank - encourage playing to clear the slot
+  suggested?: boolean; // hint/error guidance is pointing at this card
 }
 
 const SIZES = {
@@ -35,7 +36,7 @@ const RANK_SIZE = {
 
 export function PlayingCard({
   card, faceDown = false, size = 'md', selected = false, dim = false, legal = false, launching = false,
-  onClick, onPointerDown, dragGhost = false, layoutId, theme = 'classic', priority = false,
+  onClick, onPointerDown, dragGhost = false, layoutId, theme = 'classic', priority = false, suggested = false,
 }: Props) {
   const isRed = card && (card.suit === '♥' || card.suit === '♦');
   const isCasino = theme === 'casino';
@@ -147,8 +148,9 @@ export function PlayingCard({
         flex flex-col
         ${interactive ? 'cursor-pointer active:scale-[0.985]' : ''}
         ${selected ? 'ring-2 ring-brass-400 ring-offset-2 ring-offset-felt-900' : ''}
-        ${legal && !selected ? 'ring-2 ring-emerald-400/70' : ''}
+        ${legal && !selected && !suggested ? 'ring-2 ring-emerald-400/70' : ''}
         ${priority && !selected ? 'ring-2 ring-emerald-400/80 animate-pulse' : ''}
+        ${suggested && !selected ? 'animate-pulse-glow' : ''}
         ${dim ? 'opacity-50' : ''}
         ${tenAccent}
         ${isCasino
