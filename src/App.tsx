@@ -18,6 +18,9 @@ export default function App() {
   } = useSwipeGame();
 
   const [savedGame, setSavedGame] = useState<GameState | null>(() => loadSavedGame());
+  // Cards the open hint panel points at — flows into GameBoard as props so
+  // highlighting stays React-rendered instead of direct DOM mutation
+  const [hintCardIds, setHintCardIds] = useState<string[]>([]);
 
   useEffect(() => {
     if (!state) setSavedGame(loadSavedGame());
@@ -72,11 +75,12 @@ export default function App() {
             onMainMenu={resetToMenu}
             theme={theme}
             onThemeChange={setTheme}
+            hintCardIds={hintCardIds}
           />
         )}
       </AnimatePresence>
 
-      {state && <GuidanceOverlay state={state} error={lastError} />}
+      {state && <GuidanceOverlay state={state} onHighlightChange={setHintCardIds} />}
 
       {state?.phase === 'roundEnd' && (
         <RoundEndModal state={state} onContinue={startNextRound} />

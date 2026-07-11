@@ -111,15 +111,16 @@ export function recordCompletedGame(state: GameState): { progression: Progressio
     unlock(progress, 'first-win', unlocked);
   }
 
-  if (state.winnerIdxThisRound === humanIdx) progress.roundsWon += 1;
   if (metrics && humanIdx >= 0) {
     const burns = metrics.burns[humanIdx] ?? 0;
     const swipes = metrics.swipes[humanIdx] ?? 0;
     const pickups = metrics.pickups[humanIdx] ?? 0;
+    progress.roundsWon += metrics.roundsWon?.[humanIdx]
+      ?? (state.winnerIdxThisRound === humanIdx ? 1 : 0);
     progress.totalBurns += burns;
     progress.totalSwipes += swipes;
     progress.totalPickups += pickups;
-    if (won && metrics.cleanRoundEligible[humanIdx]) unlock(progress, 'clean-sweep', unlocked);
+    if ((metrics.cleanRoundWins?.[humanIdx] ?? 0) > 0) unlock(progress, 'clean-sweep', unlocked);
     if (burns >= 5) unlock(progress, 'burn-notice', unlocked);
     if (swipes >= 3) unlock(progress, 'swipe-artist', unlocked);
     if (won && (metrics.faceDownSuccesses[humanIdx] ?? 0) > 0) unlock(progress, 'gambler', unlocked);

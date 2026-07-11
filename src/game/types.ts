@@ -44,7 +44,28 @@ export interface GameMetrics {
   faceDownSuccesses: number[];
   faceDownFailures: number[];
   cleanRoundEligible: boolean[];
+  /** Rounds each player has won; optional on saves from before it existed. */
+  roundsWon?: number[];
+  /** Rounds won without ever taking the pile that round. */
+  cleanRoundWins?: number[];
   largestDeficit: number;
+}
+
+/** Structured record of what an engine action did — the source of truth for
+ *  metrics and sound feedback, instead of parsing narration log strings. */
+export interface GameEvent {
+  type:
+    | 'play'
+    | 'burn'
+    | 'swipe'
+    | 'pickup'
+    | 'eat'
+    | 'reset'
+    | 'flip'
+    | 'faceDownSuccess'
+    | 'faceDownFailure'
+    | 'roundEnd';
+  playerIdx: number;
 }
 
 export interface GameState {
@@ -66,4 +87,9 @@ export interface GameState {
   mode?: GameMode;
   seed?: string;
   metrics?: GameMetrics;
+  /** Events produced by the most recent engine action (replaced, not appended). */
+  events?: GameEvent[];
+  /** Monotonic count of committed actions — seeds per-turn AI randomness so
+   *  repeated board states never replay identical CPU decisions. */
+  turnCount?: number;
 }

@@ -16,6 +16,7 @@ interface Props {
   onMainMenu: () => void;
   theme: Theme;
   onThemeChange: (theme: Theme) => void;
+  hintCardIds?: string[];
 }
 
 function selectionStillExists(state: GameState, selection: SelectedCard[]): boolean {

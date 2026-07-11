@@ -1,13 +1,13 @@
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useMemo, useReducer } from 'react';
 import type { GameState } from '../game/types';
-import type { GameError } from '../hooks/useSwipeGame';
 import { getRecommendedMove } from '../game/guidance';
 import { loadProgression, shouldShowHintButton } from '../lib/progression';
 
 interface Props {
   state: GameState;
-  error: GameError | null;
+  /** Reports which cards the open hint panel refers to, for props-driven highlighting. */
+  onHighlightChange?: (cardIds: string[]) => void;
 }
 
 interface UIState {
@@ -60,11 +60,12 @@ function practiceCopy(state: GameState, title: string, body: string): { title: s
   return { title, body };
 }
 
-export function GuidanceOverlay({ state, error }: Props) {
+export function GuidanceOverlay({ state, onHighlightChange }: Props) {
   const humanIdx = state.players.findIndex(player => player.isHuman);
   const hint = useMemo(() => getRecommendedMove(state, humanIdx), [state, humanIdx]);
   const [ui, dispatch] = useReducer(reducer, { hintOpen: false, coachDismissed: false });
-  const progression = loadProgression();
+  // Re-read stored progression only when a new game begins, not every render
+  const progression = useMemo(() => loadProgression(), [state.seed]);
   const visible = shouldShowHintButton();
   const coach = practiceCopy(state, hint.title, hint.body);
 
@@ -72,19 +73,12 @@ export function GuidanceOverlay({ state, error }: Props) {
     dispatch({ type: 'closeHint' });
   }, [state.currentPlayerIdx, state.pile.length, state.pendingFaceDown?.card.id]);
 
+  // While the hint panel is open, its suggested cards glow on the table —
+  // rendered through props (App → GameBoard → PlayingCard), not DOM mutation.
+  // Illegal-move suggestions reach GameBoard directly via lastError.
   useEffect(() => {
-    const ids = error?.suggestedCardIds ?? [];
-    const elements: HTMLElement[] = [];
-    ids.forEach(id => {
-      document.querySelectorAll<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`).forEach(element => {
-        element.classList.add('ring-4', 'ring-brass-400', 'ring-offset-2', 'ring-offset-felt-900', 'animate-pulse');
-        elements.push(element);
-      });
-    });
-    return () => {
-      elements.forEach(element => element.classList.remove('ring-4', 'ring-brass-400', 'ring-offset-2', 'ring-offset-felt-900', 'animate-pulse'));
-    };
-  }, [error?.nonce, error?.suggestedCardIds]);
+    onHighlightChange?.(ui.hintOpen ? hint.cardIds : []);
+  }, [ui.hintOpen, hint, onHighlightChange]);
 
   if (humanIdx < 0) return null;
 
@@ -123,7 +117,7 @@ export function GuidanceOverlay({ state, error }: Props) {
                 <div className="text-xs font-bold uppercase tracking-[0.2em] text-brass-400">{hint.title}</div>
                 <div className="mt-1.5 text-sm leading-relaxed text-bone-100/90">{hint.body}</div>
                 {hint.cardIds.length > 0 && (
-                  <div className="mt-2 text-[10px] uppercase tracking-wide text-bone-200/45">These cards will be highlighted when a related illegal move is attempted.</div>
+                  <div className="mt-2 text-[10px] uppercase tracking-wide text-bone-200/45">The suggested cards are glowing on the table.</div>
                 )}
               </motion.div>
             )}

@@ -2,7 +2,10 @@ import type { GameState } from '../game/types';
 import { DEFAULT_RULES } from '../game/rules';
 
 const KEY = 'swipe-saved-game';
+// v1 → v2 added mode/seed/metrics, all optional and backfilled below, so v1
+// saves stay loadable — never delete a player's in-progress game on update.
 const VERSION = 2;
+const READABLE_VERSIONS = new Set([1, 2]);
 
 interface SaveEnvelope {
   version: number;
@@ -37,7 +40,7 @@ export function loadSavedGame(): GameState | null {
     const raw = localStorage.getItem(KEY);
     if (!raw) return null;
     const env = JSON.parse(raw) as SaveEnvelope;
-    if (env.version !== VERSION || !env.state) {
+    if (!READABLE_VERSIONS.has(env.version) || !env.state) {
       clearSavedGame();
       return null;
     }

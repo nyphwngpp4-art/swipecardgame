@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import type { GameSetupOptions } from '../game/setup';
+import type { NewGameOptions } from '../game/engine';
 import type { GameState, HouseRules } from '../game/types';
 import { DEFAULT_RULES } from '../game/rules';
 import type { Theme } from '../theme';
@@ -29,7 +29,7 @@ function saveHouseRules(rules: HouseRules) {
 }
 
 interface Props {
-  onStart: (opts: GameSetupOptions) => void;
+  onStart: (opts: NewGameOptions) => void;
   theme: Theme;
   onThemeChange: (t: Theme) => void;
   savedGame?: GameState | null;

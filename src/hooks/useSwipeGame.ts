@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GameMetrics, GameState, SelectedCard } from '../game/types';
 import {
+  createMetrics,
   flipFaceDown,
+  newGame,
+  nextRound,
   playCards,
   resolveFaceDown,
   voluntaryEatPile,
+  type NewGameOptions,
 } from '../game/engine';
-import { createGame, createNextRound, type GameSetupOptions } from '../game/setup';
 import { chooseAIMove } from '../game/ai';
 import { explainRuleError } from '../game/guidance';
 import { playSound, haptic } from '../lib/sound';
@@ -21,22 +24,10 @@ export interface GameError {
   nonce: number;
 }
 
-function emptyMetrics(count: number): GameMetrics {
-  return {
-    burns: Array(count).fill(0),
-    swipes: Array(count).fill(0),
-    pickups: Array(count).fill(0),
-    voluntaryEats: Array(count).fill(0),
-    faceDownSuccesses: Array(count).fill(0),
-    faceDownFailures: Array(count).fill(0),
-    cleanRoundEligible: Array(count).fill(true),
-    largestDeficit: 0,
-  };
-}
-
+/** Fold the action's structured events into cumulative game metrics. */
 function updateMetrics(prev: GameState, next: GameState): GameState {
   const count = next.players.length;
-  const base = prev.metrics ?? emptyMetrics(count);
+  const base = prev.metrics ?? createMetrics(count);
   const metrics: GameMetrics = {
     burns: [...base.burns],
     swipes: [...base.swipes],
@@ -45,28 +36,33 @@ function updateMetrics(prev: GameState, next: GameState): GameState {
     faceDownSuccesses: [...base.faceDownSuccesses],
     faceDownFailures: [...base.faceDownFailures],
     cleanRoundEligible: [...base.cleanRoundEligible],
+    roundsWon: [...(base.roundsWon ?? Array(count).fill(0))],
+    cleanRoundWins: [...(base.cleanRoundWins ?? Array(count).fill(0))],
     largestDeficit: base.largestDeficit,
   };
-  const actor = prev.currentPlayerIdx;
-  const latest = next.log[0] ?? '';
-  const pileCleared = prev.pile.length > 0 && next.pile.length === 0;
-  if (pileCleared && latest.includes('burned')) metrics.burns[actor] = (metrics.burns[actor] ?? 0) + 1;
-  if (pileCleared && latest.includes('swiped')) metrics.swipes[actor] = (metrics.swipes[actor] ?? 0) + 1;
-  if (latest.includes('picked up')) {
-    metrics.pickups[actor] = (metrics.pickups[actor] ?? 0) + 1;
-    metrics.cleanRoundEligible[actor] = false;
-  }
-  if (latest.includes('ate the pile')) {
-    metrics.voluntaryEats[actor] = (metrics.voluntaryEats[actor] ?? 0) + 1;
-    metrics.pickups[actor] = (metrics.pickups[actor] ?? 0) + 1;
-    metrics.cleanRoundEligible[actor] = false;
-  }
-  if (prev.pendingFaceDown && !next.pendingFaceDown) {
-    if (latest.includes('too high')) {
-      metrics.faceDownFailures[actor] = (metrics.faceDownFailures[actor] ?? 0) + 1;
-      metrics.cleanRoundEligible[actor] = false;
-    } else {
-      metrics.faceDownSuccesses[actor] = (metrics.faceDownSuccesses[actor] ?? 0) + 1;
+  for (const event of next.events ?? []) {
+    const p = event.playerIdx;
+    switch (event.type) {
+      case 'burn': metrics.burns[p] = (metrics.burns[p] ?? 0) + 1; break;
+      case 'swipe': metrics.swipes[p] = (metrics.swipes[p] ?? 0) + 1; break;
+      case 'pickup':
+        metrics.pickups[p] = (metrics.pickups[p] ?? 0) + 1;
+        metrics.cleanRoundEligible[p] = false;
+        break;
+      case 'eat':
+        metrics.voluntaryEats[p] = (metrics.voluntaryEats[p] ?? 0) + 1;
+        metrics.pickups[p] = (metrics.pickups[p] ?? 0) + 1;
+        metrics.cleanRoundEligible[p] = false;
+        break;
+      case 'faceDownSuccess': metrics.faceDownSuccesses[p] = (metrics.faceDownSuccesses[p] ?? 0) + 1; break;
+      case 'faceDownFailure': metrics.faceDownFailures[p] = (metrics.faceDownFailures[p] ?? 0) + 1; break;
+      case 'roundEnd':
+        metrics.roundsWon![p] = (metrics.roundsWon![p] ?? 0) + 1;
+        if (metrics.cleanRoundEligible[p]) {
+          metrics.cleanRoundWins![p] = (metrics.cleanRoundWins![p] ?? 0) + 1;
+        }
+        break;
+      default: break;
     }
   }
   const humanIdx = next.players.findIndex(player => player.isHuman);
@@ -85,8 +81,7 @@ function feedbackForTransition(prev: GameState, next: GameState) {
     return;
   }
   if (prev.pile.length > 0 && next.pile.length === 0) {
-    const lastLine = next.log[0] ?? '';
-    if (lastLine.includes('burned')) {
+    if ((next.events ?? []).some(event => event.type === 'burn')) {
       playSound('burn');
       haptic([30, 30, 50]);
     } else {
@@ -140,18 +135,18 @@ export function useSwipeGame() {
     setState(next);
   }, []);
 
-  const startGame = useCallback((opts: GameSetupOptions) => {
+  const startGame = useCallback((opts: NewGameOptions) => {
     setLastError(null);
     setNewAchievements([]);
     recordedGameSeed.current = null;
     recordGameStarted();
     playSound('shuffle');
-    setState(createGame(opts));
+    setState(newGame(opts));
   }, []);
 
   const startNextRound = useCallback(() => {
     playSound('shuffle');
-    setState(current => current ? createNextRound(current) : current);
+    setState(current => current ? nextRound(current) : current);
   }, []);
 
   const resetToMenu = useCallback(() => {
@@ -267,7 +262,11 @@ export function useSwipeGame() {
       return;
     }
     setAiThinkingIdx(state.currentPlayerIdx);
-    const turnSeed = `${state.seed ?? 'legacy'}-${state.roundNumber}-${state.log.length}-${state.currentPlayerIdx}-${state.pile.length}`;
+    // Seeded by the monotonic action counter: replaying the same seed with the
+    // same human moves is fully deterministic (daily deal), yet a board state
+    // that recurs mid-game still gets fresh randomness — identical per-state
+    // seeds would let CPU-vs-CPU eat/replay cycles repeat forever.
+    const turnSeed = `${state.seed ?? 'legacy'}-turn-${state.turnCount ?? state.log.length}-${state.currentPlayerIdx}`;
     const rng = createSeededRng(turnSeed);
     const timer = setTimeout(() => {
       setAiThinkingIdx(null);
