@@ -2,7 +2,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useSwipeGame } from './hooks/useSwipeGame';
 import { StartMenu } from './components/StartMenu';
-import { GameBoard } from './components/GameBoard';
+import { GameBoardController } from './components/GameBoardController';
 import { GameOverModal, RoundEndModal } from './components/Modals';
 import { GuidanceOverlay } from './components/GuidanceOverlay';
 import { loadSavedGame } from './lib/persistence';
@@ -59,7 +59,7 @@ export default function App() {
             onContinue={() => savedGame && resumeGame(savedGame)}
           />
         ) : (
-          <GameBoard
+          <GameBoardController
             key="board"
             state={state}
             onPlay={tryPlay}
@@ -76,7 +76,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {state && <GuidanceOverlay state={state} />}
+      {state && <GuidanceOverlay state={state} error={lastError} />}
 
       {state?.phase === 'roundEnd' && (
         <RoundEndModal state={state} onContinue={startNextRound} />
