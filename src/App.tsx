@@ -1,12 +1,12 @@
-import { AnimatePresence } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useSwipeGame } from './hooks/useSwipeGame';
 import { StartMenu } from './components/StartMenu';
 import { GameBoard } from './components/GameBoard';
 import { GameOverModal, RoundEndModal } from './components/Modals';
+import { GuidanceOverlay } from './components/GuidanceOverlay';
 import { loadSavedGame } from './lib/persistence';
 import type { GameState } from './game/types';
-
 import type { Theme } from './theme';
 export type { Theme } from './theme';
 
@@ -14,12 +14,11 @@ export default function App() {
   const {
     state, startGame, startNextRound, resetToMenu, resumeGame,
     tryPlay, tryFlip, tryResolveFaceDown, tryEatPile, lastError,
-    aiThinkingIdx,
+    aiThinkingIdx, newAchievements, clearNewAchievements,
   } = useSwipeGame();
 
   const [savedGame, setSavedGame] = useState<GameState | null>(() => loadSavedGame());
 
-  // Re-check the save whenever we land on the menu (e.g. after Main Menu mid-game)
   useEffect(() => {
     if (!state) setSavedGame(loadSavedGame());
   }, [state]);
@@ -38,9 +37,12 @@ export default function App() {
     if (!state) return;
     startGame({
       numPlayers: state.players.length,
-      humanCount: state.players.filter(p => p.isHuman).length,
+      humanCount: state.players.filter(player => player.isHuman).length,
       targetScore: state.targetScore,
       difficulty: state.difficulty,
+      rules: state.rules,
+      mode: state.mode ?? 'standard',
+      seed: state.mode === 'daily' ? state.seed : undefined,
     });
   };
 
@@ -74,6 +76,8 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {state && <GuidanceOverlay state={state} />}
+
       {state?.phase === 'roundEnd' && (
         <RoundEndModal state={state} onContinue={startNextRound} />
       )}
@@ -84,6 +88,31 @@ export default function App() {
           onMainMenu={resetToMenu}
         />
       )}
+
+      <AnimatePresence>
+        {newAchievements.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 12 }}
+            className="fixed bottom-5 left-1/2 z-[100] w-[min(90vw,390px)] -translate-x-1/2 rounded-2xl border border-brass-500/45 bg-felt-900/95 p-4 shadow-2xl backdrop-blur"
+          >
+            <div className="flex items-start gap-3">
+              <div className="text-2xl">🏆</div>
+              <div className="flex-1">
+                <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-brass-400">Achievement unlocked</div>
+                {newAchievements.map(achievement => (
+                  <div key={achievement.id} className="mt-1">
+                    <div className="font-display font-bold text-bone-100">{achievement.title}</div>
+                    <div className="text-xs text-bone-200/65">{achievement.description}</div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={clearNewAchievements} className="text-xl leading-none text-bone-200/50" aria-label="Dismiss achievements">×</button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
