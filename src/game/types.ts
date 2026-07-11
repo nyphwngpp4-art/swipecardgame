@@ -62,7 +62,8 @@ export interface GameState {
   pendingFaceDown: { playerIdx: number; slot: number; card: Card } | null;
   winnerIdxThisRound: number | null;
   gameWinnerIdx: number | null;
-  mode: GameMode;
-  seed: string;
-  metrics: GameMetrics;
+  /** Optional for compatibility with version-1 saves. */
+  mode?: GameMode;
+  seed?: string;
+  metrics?: GameMetrics;
 }
