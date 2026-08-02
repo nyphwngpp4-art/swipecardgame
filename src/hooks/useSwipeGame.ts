@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { GameState, SelectedCard } from '../game/types';
+import type { GameMetrics, GameState, SelectedCard } from '../game/types';
 import {
+  createMetrics,
   flipFaceDown,
   newGame,
   nextRound,
@@ -10,27 +11,77 @@ import {
   type NewGameOptions,
 } from '../game/engine';
 import { chooseAIMove } from '../game/ai';
+import { explainRuleError } from '../game/guidance';
 import { playSound, haptic } from '../lib/sound';
 import { saveGame, clearSavedGame } from '../lib/persistence';
+import { createSeededRng } from '../lib/random';
+import { recordCompletedGame, recordGameStarted, type Achievement } from '../lib/progression';
 
 export interface GameError {
+  code: 'RULE_ERROR';
   message: string;
-  nonce: number; // changes every time, so identical messages still re-animate
+  suggestedCardIds: string[];
+  nonce: number;
 }
 
-/** Fire the right sound/haptic for a state transition. */
+/** Fold the action's structured events into cumulative game metrics. */
+function updateMetrics(prev: GameState, next: GameState): GameState {
+  const count = next.players.length;
+  const base = prev.metrics ?? createMetrics(count);
+  const metrics: GameMetrics = {
+    burns: [...base.burns],
+    swipes: [...base.swipes],
+    pickups: [...base.pickups],
+    voluntaryEats: [...base.voluntaryEats],
+    faceDownSuccesses: [...base.faceDownSuccesses],
+    faceDownFailures: [...base.faceDownFailures],
+    cleanRoundEligible: [...base.cleanRoundEligible],
+    roundsWon: [...(base.roundsWon ?? Array(count).fill(0))],
+    cleanRoundWins: [...(base.cleanRoundWins ?? Array(count).fill(0))],
+    largestDeficit: base.largestDeficit,
+  };
+  for (const event of next.events ?? []) {
+    const p = event.playerIdx;
+    switch (event.type) {
+      case 'burn': metrics.burns[p] = (metrics.burns[p] ?? 0) + 1; break;
+      case 'swipe': metrics.swipes[p] = (metrics.swipes[p] ?? 0) + 1; break;
+      case 'pickup':
+        metrics.pickups[p] = (metrics.pickups[p] ?? 0) + 1;
+        metrics.cleanRoundEligible[p] = false;
+        break;
+      case 'eat':
+        metrics.voluntaryEats[p] = (metrics.voluntaryEats[p] ?? 0) + 1;
+        metrics.pickups[p] = (metrics.pickups[p] ?? 0) + 1;
+        metrics.cleanRoundEligible[p] = false;
+        break;
+      case 'faceDownSuccess': metrics.faceDownSuccesses[p] = (metrics.faceDownSuccesses[p] ?? 0) + 1; break;
+      case 'faceDownFailure': metrics.faceDownFailures[p] = (metrics.faceDownFailures[p] ?? 0) + 1; break;
+      case 'roundEnd':
+        metrics.roundsWon![p] = (metrics.roundsWon![p] ?? 0) + 1;
+        if (metrics.cleanRoundEligible[p]) {
+          metrics.cleanRoundWins![p] = (metrics.cleanRoundWins![p] ?? 0) + 1;
+        }
+        break;
+      default: break;
+    }
+  }
+  const humanIdx = next.players.findIndex(player => player.isHuman);
+  if (humanIdx >= 0) {
+    const humanScore = next.scores[humanIdx] ?? 0;
+    const bestOpponent = Math.min(...next.scores.filter((_, index) => index !== humanIdx));
+    metrics.largestDeficit = Math.max(metrics.largestDeficit, humanScore - bestOpponent);
+  }
+  return { ...next, metrics };
+}
+
 function feedbackForTransition(prev: GameState, next: GameState) {
-  // Round / game end celebrations
   if (prev.phase === 'playing' && next.phase !== 'playing') {
     playSound('sweepCelebration');
     haptic([60, 40, 80]);
     return;
   }
-
-  // Pile cleared → was it a burn (10) or a four-of-a-kind swipe?
   if (prev.pile.length > 0 && next.pile.length === 0) {
-    const lastLine = next.log[0] ?? '';
-    if (lastLine.includes('burned')) {
+    if ((next.events ?? []).some(event => event.type === 'burn')) {
       playSound('burn');
       haptic([30, 30, 50]);
     } else {
@@ -39,15 +90,11 @@ function feedbackForTransition(prev: GameState, next: GameState) {
     }
     return;
   }
-
-  // Pile grew → a normal play landed
   if (next.pile.length > prev.pile.length) {
     playSound('play');
     haptic(15);
     return;
   }
-
-  // Pile shrank into a hand (pickup / eat)
   if (next.pile.length < prev.pile.length) {
     playSound('pickup');
     haptic(25);
@@ -58,33 +105,48 @@ export function useSwipeGame() {
   const [state, setState] = useState<GameState | null>(null);
   const [lastError, setLastError] = useState<GameError | null>(null);
   const [aiThinkingIdx, setAiThinkingIdx] = useState<number | null>(null);
+  const [newAchievements, setNewAchievements] = useState<Achievement[]>([]);
   const errorNonce = useRef(0);
   const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const recordedGameSeed = useRef<string | null>(null);
 
-  const raiseError = useCallback((message: string) => {
+  const raiseError = useCallback((reason: string, current?: GameState) => {
     errorNonce.current += 1;
-    setLastError({ message, nonce: errorNonce.current });
+    const humanIdx = current?.players.findIndex(player => player.isHuman) ?? -1;
+    const detail = current && humanIdx >= 0
+      ? explainRuleError(reason, current, humanIdx)
+      : { message: reason, suggestedCardIds: [] };
+    setLastError({ code: 'RULE_ERROR', ...detail, nonce: errorNonce.current });
     playSound('error');
     haptic([20, 30, 20]);
     if (errorTimer.current) clearTimeout(errorTimer.current);
-    errorTimer.current = setTimeout(() => setLastError(null), 2800);
+    errorTimer.current = setTimeout(() => setLastError(null), 3600);
   }, []);
 
-  const commit = useCallback((prev: GameState | null, next: GameState) => {
+  const commit = useCallback((prev: GameState | null, rawNext: GameState, soundOverride?: 'flip') => {
+    const next = prev ? updateMetrics(prev, rawNext) : rawNext;
     setLastError(null);
-    if (prev) feedbackForTransition(prev, next);
+    if (soundOverride === 'flip') {
+      playSound('flip');
+      haptic(20);
+    } else if (prev) {
+      feedbackForTransition(prev, next);
+    }
     setState(next);
   }, []);
 
   const startGame = useCallback((opts: NewGameOptions) => {
     setLastError(null);
+    setNewAchievements([]);
+    recordedGameSeed.current = null;
+    recordGameStarted();
     playSound('shuffle');
     setState(newGame(opts));
   }, []);
 
   const startNextRound = useCallback(() => {
     playSound('shuffle');
-    setState(s => (s ? nextRound(s) : s));
+    setState(current => current ? nextRound(current) : current);
   }, []);
 
   const resetToMenu = useCallback(() => {
@@ -97,62 +159,63 @@ export function useSwipeGame() {
     setState(saved);
   }, []);
 
-  // Persist progress so an interrupted session can resume.
-  // Going to the menu (state === null) keeps the save; finishing a game clears it.
   useEffect(() => {
     if (!state) return;
     if (state.phase === 'gameOver') {
       clearSavedGame();
+      const identity = state.seed ?? `legacy-${state.roundNumber}-${state.scores.join('-')}`;
+      if (recordedGameSeed.current !== identity) {
+        recordedGameSeed.current = identity;
+        const result = recordCompletedGame(state);
+        setNewAchievements(result.unlocked);
+      }
       return;
     }
     saveGame(state);
   }, [state]);
 
   const tryPlay = useCallback((selected: SelectedCard[]) => {
-    setState(s => {
-      if (!s) return s;
-      const r = playCards(s, selected);
-      if (r.ok) {
-        setLastError(null);
-        feedbackForTransition(s, r.state);
-        return r.state;
+    setState(current => {
+      if (!current) return current;
+      const result = playCards(current, selected);
+      if (!result.ok) {
+        raiseError(result.reason, current);
+        return current;
       }
-      raiseError(r.reason);
-      return s;
+      const next = updateMetrics(current, result.state);
+      setLastError(null);
+      feedbackForTransition(current, next);
+      return next;
     });
   }, [raiseError]);
 
   const tryFlip = useCallback((slot: number) => {
-    setState(s => {
-      if (!s) return s;
-      const r = flipFaceDown(s, slot);
-      if (!r.ok) {
-        raiseError(r.reason);
-        return s;
+    setState(current => {
+      if (!current) return current;
+      const result = flipFaceDown(current, slot);
+      if (!result.ok) {
+        raiseError(result.reason, current);
+        return current;
       }
       setLastError(null);
       playSound('flip');
       haptic(20);
-
-      // No chain possible → auto-resolve, but after a suspense beat so the
-      // player actually witnesses the reveal before the verdict lands
-      const newState = r.state;
+      const newState = result.state;
       const pending = newState.pendingFaceDown;
       if (pending && pending.playerIdx === newState.currentPlayerIdx) {
         const player = newState.players[newState.currentPlayerIdx];
-        const hasHandMatches = player.hand.some(c => c.rank === pending.card.rank);
-        const hasFaceUpMatches = player.faceUp.some(c => c && c.rank === pending.card.rank);
-
-        if (!hasHandMatches && !hasFaceUpMatches) {
+        const hasMatches = player.hand.some(card => card.rank === pending.card.rank)
+          || player.faceUp.some(card => card?.rank === pending.card.rank);
+        if (!hasMatches) {
           const flippedId = pending.card.id;
           setTimeout(() => {
-            setState(cur => {
-              // Only resolve if this exact flip is still pending (user may have confirmed)
-              if (!cur || cur.pendingFaceDown?.card.id !== flippedId) return cur;
-              const resolveResult = resolveFaceDown(cur, []);
-              if (!resolveResult.ok) return cur;
-              feedbackForTransition(cur, resolveResult.state);
-              return resolveResult.state;
+            setState(latest => {
+              if (!latest || latest.pendingFaceDown?.card.id !== flippedId) return latest;
+              const resolved = resolveFaceDown(latest, []);
+              if (!resolved.ok) return latest;
+              const next = updateMetrics(latest, resolved.state);
+              feedbackForTransition(latest, next);
+              return next;
             });
           }, 1100);
         }
@@ -162,73 +225,76 @@ export function useSwipeGame() {
   }, [raiseError]);
 
   const tryResolveFaceDown = useCallback((chain: SelectedCard[]) => {
-    setState(s => {
-      if (!s) return s;
-      const r = resolveFaceDown(s, chain);
-      if (r.ok) {
-        setLastError(null);
-        feedbackForTransition(s, r.state);
-        return r.state;
+    setState(current => {
+      if (!current) return current;
+      const result = resolveFaceDown(current, chain);
+      if (!result.ok) {
+        raiseError(result.reason, current);
+        return current;
       }
-      raiseError(r.reason);
-      return s;
+      const next = updateMetrics(current, result.state);
+      setLastError(null);
+      feedbackForTransition(current, next);
+      return next;
     });
   }, [raiseError]);
 
   const tryEatPile = useCallback(() => {
-    setState(s => {
-      if (!s) return s;
-      const r = voluntaryEatPile(s);
-      if (r.ok) {
-        setLastError(null);
-        feedbackForTransition(s, r.state);
-        return r.state;
+    setState(current => {
+      if (!current) return current;
+      const result = voluntaryEatPile(current);
+      if (!result.ok) {
+        raiseError(result.reason, current);
+        return current;
       }
-      raiseError(r.reason);
-      return s;
+      const next = updateMetrics(current, result.state);
+      setLastError(null);
+      feedbackForTransition(current, next);
+      return next;
     });
   }, [raiseError]);
 
-  // AI auto-play loop
   useEffect(() => {
-    if (!state) return;
-    if (state.phase !== 'playing') return;
+    if (!state || state.phase !== 'playing') return;
     const current = state.players[state.currentPlayerIdx];
     if (current.isHuman) {
       setAiThinkingIdx(null);
       return;
     }
-
     setAiThinkingIdx(state.currentPlayerIdx);
-
-    const t = setTimeout(() => {
+    // Seeded by the monotonic action counter: replaying the same seed with the
+    // same human moves is fully deterministic (daily deal), yet a board state
+    // that recurs mid-game still gets fresh randomness — identical per-state
+    // seeds would let CPU-vs-CPU eat/replay cycles repeat forever.
+    const turnSeed = `${state.seed ?? 'legacy'}-turn-${state.turnCount ?? state.log.length}-${state.currentPlayerIdx}`;
+    const rng = createSeededRng(turnSeed);
+    const timer = setTimeout(() => {
       setAiThinkingIdx(null);
-      const move = chooseAIMove(state);
+      const move = chooseAIMove(state, rng);
       if (move.type === 'play') {
-        const r = playCards(state, move.selected);
-        if (r.ok) commit(state, r.state);
-        else console.warn('AI illegal play:', r.reason, move);
+        const result = playCards(state, move.selected);
+        if (result.ok) commit(state, result.state);
+        else console.warn('AI illegal play:', result.reason, move);
       } else if (move.type === 'flipFaceDown') {
-        const r = flipFaceDown(state, move.slot);
-        if (r.ok) {
-          playSound('flip');
-          // Leave the flip pending — the next loop tick resolves it after the
-          // reveal delay below, giving the blind flip its moment of suspense.
-          setState(r.state);
-        } else console.warn('AI illegal flip:', r.reason);
+        const result = flipFaceDown(state, move.slot);
+        if (result.ok) commit(state, result.state, 'flip');
+        else console.warn('AI illegal flip:', result.reason);
       } else if (move.type === 'eatPile') {
-        const r = voluntaryEatPile(state);
-        if (r.ok) commit(state, r.state);
-        else console.warn('AI illegal eat:', r.reason);
+        const result = voluntaryEatPile(state);
+        if (result.ok) commit(state, result.state);
+        else console.warn('AI illegal eat:', result.reason);
       } else {
-        const r = resolveFaceDown(state, move.chain);
-        if (r.ok) commit(state, r.state);
-        else console.warn('AI illegal resolve:', r.reason);
+        const result = resolveFaceDown(state, move.chain);
+        if (result.ok) commit(state, result.state);
+        else console.warn('AI illegal resolve:', result.reason);
       }
-    }, state.pendingFaceDown ? 1500 : 650 + Math.random() * 550);
-
-    return () => clearTimeout(t);
+    }, state.pendingFaceDown ? 1500 : 650 + rng() * 550);
+    return () => clearTimeout(timer);
   }, [state, commit]);
+
+  useEffect(() => () => {
+    if (errorTimer.current) clearTimeout(errorTimer.current);
+  }, []);
 
   return {
     state,
@@ -242,5 +308,7 @@ export function useSwipeGame() {
     tryEatPile,
     lastError,
     aiThinkingIdx,
+    newAchievements,
+    clearNewAchievements: () => setNewAchievements([]),
   };
 }

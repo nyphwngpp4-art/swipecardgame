@@ -30,6 +30,7 @@ interface Props {
   onRequestEatPile?: () => void;
   onCardPointerDown?: (e: ReactPointerEvent, sel: SelectedCard) => void;
   draggingCardId?: string | null;
+  suggestedIds?: Set<string>;
   hideActionBar?: boolean;
   compact?: boolean;
   theme?: Theme;
@@ -39,7 +40,7 @@ export function PlayerArea({
   state, selected, onToggleSelect, onClearSelection, onFlipFaceDown,
   onPlay, onResolveFaceDown, pendingChain, onTogglePendingChain,
   launchingIds = new Set(), onSelectRank, onRequestEatPile,
-  onCardPointerDown, draggingCardId = null, hideActionBar = false, compact = false,
+  onCardPointerDown, draggingCardId = null, suggestedIds, hideActionBar = false, compact = false,
   theme = 'classic',
 }: Props) {
   const cardSize = compact ? 'sm' as const : 'md' as const;
@@ -296,6 +297,7 @@ export function PlayerArea({
                             size={cardSize}
                             selected={thisCardSelected}
                             legal={isLegal && !isRankSelected}
+                            suggested={suggestedIds?.has(c.id)}
                             launching={launchingIds.has(c.id)}
                             dragGhost={draggingCardId === c.id}
                             theme={theme}
@@ -369,6 +371,7 @@ export function PlayerArea({
                       size="xs"
                       selected={isCardSelected(fuCard.id)}
                       legal={legalRanks.has(fuCard.rank)}
+                      suggested={suggestedIds?.has(fuCard.id)}
                       launching={launchingIds.has(fuCard.id)}
                       dragGhost={draggingCardId === fuCard.id}
                       theme={theme}
