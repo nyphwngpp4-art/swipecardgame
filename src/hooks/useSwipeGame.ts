@@ -101,214 +101,104 @@ function feedbackForTransition(prev: GameState, next: GameState) {
   }
 }
 
-export function useSwipeGame() {
+export function useSwipeGame({ paused = false, pace = 'relaxed' }: { paused?: boolean; pace?: 'relaxed' | 'regular' | 'quick' } = {}) {
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
   const [state, setState] = useState<GameState | null>(null);
+  const latest = useRef<GameState | null>(null);
   const [lastError, setLastError] = useState<GameError | null>(null);
-  const [aiThinkingIdx, setAiThinkingIdx] = useState<number | null>(null);
   const [newAchievements, setNewAchievements] = useState<Achievement[]>([]);
-  const errorNonce = useRef(0);
-  const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [visible, setVisible] = useState(() => !document.hidden);
   const recordedGameSeed = useRef<string | null>(null);
+  const errorNonce = useRef(0);
 
-  const raiseError = useCallback((reason: string, current?: GameState) => {
-    errorNonce.current += 1;
-    const humanIdx = current?.players.findIndex(player => player.isHuman) ?? -1;
-    const detail = current && humanIdx >= 0
-      ? explainRuleError(reason, current, humanIdx)
-      : { message: reason, suggestedCardIds: [] };
-    setLastError({ code: 'RULE_ERROR', ...detail, nonce: errorNonce.current });
-    playSound('error');
-    haptic([20, 30, 20]);
-    if (errorTimer.current) clearTimeout(errorTimer.current);
-    errorTimer.current = setTimeout(() => setLastError(null), 3600);
+  useEffect(() => {
+    const update = () => setVisible(!document.hidden);
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
   }, []);
 
-  const commit = useCallback((prev: GameState | null, rawNext: GameState, soundOverride?: 'flip') => {
-    const next = prev ? updateMetrics(prev, rawNext) : rawNext;
-    setLastError(null);
-    if (soundOverride === 'flip') {
-      playSound('flip');
-      haptic(20);
-    } else if (prev) {
-      feedbackForTransition(prev, next);
-    }
+  const publish = useCallback((next: GameState | null) => {
+    latest.current = next;
     setState(next);
+    setLastError(null);
+  }, []);
+  const commit = useCallback((prev: GameState, rawNext: GameState, flip = false) => {
+    if (latest.current !== prev) return;
+    const next = updateMetrics(prev, rawNext);
+    publish(next);
+    if (flip) { playSound('flip'); haptic(20); }
+    else feedbackForTransition(prev, next);
+  }, [publish]);
+  const raiseError = useCallback((reason: string, current: GameState) => {
+    const detail = explainRuleError(reason, current, current.currentPlayerIdx);
+    setLastError({ code: 'RULE_ERROR', ...detail, nonce: ++errorNonce.current });
+    playSound('error');
   }, []);
 
   const startGame = useCallback((opts: NewGameOptions) => {
-    setLastError(null);
     setNewAchievements([]);
     recordedGameSeed.current = null;
-    recordGameStarted();
+    if (opts.mode !== 'practice') recordGameStarted();
     playSound('shuffle');
-    setState(newGame(opts));
-  }, []);
-
+    publish(newGame(opts));
+  }, [publish]);
   const startNextRound = useCallback(() => {
+    const current = latest.current;
+    if (!current || current.phase !== 'roundEnd') return;
     playSound('shuffle');
-    setState(current => current ? nextRound(current) : current);
-  }, []);
-
-  const resetToMenu = useCallback(() => {
-    setLastError(null);
-    setState(null);
-  }, []);
-
-  const resumeGame = useCallback((saved: GameState) => {
-    setLastError(null);
-    setState(saved);
-  }, []);
+    publish(nextRound(current));
+  }, [publish]);
+  const resetToMenu = useCallback(() => publish(null), [publish]);
+  const resumeGame = useCallback((saved: GameState) => publish(saved), [publish]);
 
   useEffect(() => {
     if (!state) return;
     if (state.phase === 'gameOver') {
       clearSavedGame();
       const identity = state.seed ?? `legacy-${state.roundNumber}-${state.scores.join('-')}`;
-      if (recordedGameSeed.current !== identity) {
+      if (recordedGameSeed.current !== identity && state.mode !== 'practice') {
         recordedGameSeed.current = identity;
-        const result = recordCompletedGame(state);
-        setNewAchievements(result.unlocked);
+        setNewAchievements(recordCompletedGame(state).unlocked);
       }
-      return;
-    }
-    saveGame(state);
+    } else saveGame(state);
   }, [state]);
 
-  const tryPlay = useCallback((selected: SelectedCard[]) => {
-    setState(current => {
-      if (!current) return current;
-      const result = playCards(current, selected);
-      if (!result.ok) {
-        raiseError(result.reason, current);
-        return current;
-      }
-      const next = updateMetrics(current, result.state);
-      setLastError(null);
-      feedbackForTransition(current, next);
-      return next;
-    });
-  }, [raiseError]);
-
-  const tryFlip = useCallback((slot: number) => {
-    setState(current => {
-      if (!current) return current;
-      const result = flipFaceDown(current, slot);
-      if (!result.ok) {
-        raiseError(result.reason, current);
-        return current;
-      }
-      setLastError(null);
-      playSound('flip');
-      haptic(20);
-      const newState = result.state;
-      const pending = newState.pendingFaceDown;
-      if (pending && pending.playerIdx === newState.currentPlayerIdx) {
-        const player = newState.players[newState.currentPlayerIdx];
-        const hasMatches = player.hand.some(card => card.rank === pending.card.rank)
-          || player.faceUp.some(card => card?.rank === pending.card.rank);
-        if (!hasMatches) {
-          const flippedId = pending.card.id;
-          setTimeout(() => {
-            setState(latest => {
-              if (!latest || latest.pendingFaceDown?.card.id !== flippedId) return latest;
-              const resolved = resolveFaceDown(latest, []);
-              if (!resolved.ok) return latest;
-              const next = updateMetrics(latest, resolved.state);
-              feedbackForTransition(latest, next);
-              return next;
-            });
-          }, 1100);
-        }
-      }
-      return newState;
-    });
-  }, [raiseError]);
-
-  const tryResolveFaceDown = useCallback((chain: SelectedCard[]) => {
-    setState(current => {
-      if (!current) return current;
-      const result = resolveFaceDown(current, chain);
-      if (!result.ok) {
-        raiseError(result.reason, current);
-        return current;
-      }
-      const next = updateMetrics(current, result.state);
-      setLastError(null);
-      feedbackForTransition(current, next);
-      return next;
-    });
-  }, [raiseError]);
-
-  const tryEatPile = useCallback(() => {
-    setState(current => {
-      if (!current) return current;
-      const result = voluntaryEatPile(current);
-      if (!result.ok) {
-        raiseError(result.reason, current);
-        return current;
-      }
-      const next = updateMetrics(current, result.state);
-      setLastError(null);
-      feedbackForTransition(current, next);
-      return next;
-    });
-  }, [raiseError]);
+  function humanAction(action: (current: GameState) => ReturnType<typeof playCards>, flip = false) {
+    const current = latest.current;
+    if (!current || pausedRef.current || document.hidden || current.phase !== 'playing' || !current.players[current.currentPlayerIdx].isHuman) return;
+    const result = action(current);
+    if (result.ok) commit(current, result.state, flip);
+    else raiseError(result.reason, current);
+  }
 
   useEffect(() => {
-    if (!state || state.phase !== 'playing') return;
-    const current = state.players[state.currentPlayerIdx];
-    if (current.isHuman) {
-      setAiThinkingIdx(null);
+    if (!state || state.phase !== 'playing' || paused || !visible || state.players[state.currentPlayerIdx].isHuman) {
       return;
     }
-    setAiThinkingIdx(state.currentPlayerIdx);
-    // Seeded by the monotonic action counter: replaying the same seed with the
-    // same human moves is fully deterministic (daily deal), yet a board state
-    // that recurs mid-game still gets fresh randomness — identical per-state
-    // seeds would let CPU-vs-CPU eat/replay cycles repeat forever.
     const turnSeed = `${state.seed ?? 'legacy'}-turn-${state.turnCount ?? state.log.length}-${state.currentPlayerIdx}`;
     const rng = createSeededRng(turnSeed);
+    const delay = { relaxed: 2200, regular: 1300, quick: 600 }[pace];
     const timer = setTimeout(() => {
-      setAiThinkingIdx(null);
+      if (latest.current !== state || pausedRef.current || document.hidden) return;
       const move = chooseAIMove(state, rng);
-      if (move.type === 'play') {
-        const result = playCards(state, move.selected);
-        if (result.ok) commit(state, result.state);
-        else console.warn('AI illegal play:', result.reason, move);
-      } else if (move.type === 'flipFaceDown') {
-        const result = flipFaceDown(state, move.slot);
-        if (result.ok) commit(state, result.state, 'flip');
-        else console.warn('AI illegal flip:', result.reason);
-      } else if (move.type === 'eatPile') {
-        const result = voluntaryEatPile(state);
-        if (result.ok) commit(state, result.state);
-        else console.warn('AI illegal eat:', result.reason);
-      } else {
-        const result = resolveFaceDown(state, move.chain);
-        if (result.ok) commit(state, result.state);
-        else console.warn('AI illegal resolve:', result.reason);
-      }
-    }, state.pendingFaceDown ? 1500 : 650 + rng() * 550);
+      const result = move.type === 'play' ? playCards(state, move.selected)
+        : move.type === 'flipFaceDown' ? flipFaceDown(state, move.slot)
+        : move.type === 'eatPile' ? voluntaryEatPile(state)
+        : resolveFaceDown(state, move.chain);
+      if (result.ok) commit(state, result.state, move.type === 'flipFaceDown');
+      else console.warn('AI illegal move:', result.reason);
+    }, delay);
     return () => clearTimeout(timer);
-  }, [state, commit]);
-
-  useEffect(() => () => {
-    if (errorTimer.current) clearTimeout(errorTimer.current);
-  }, []);
+  }, [state, commit, paused, visible, pace]);
 
   return {
-    state,
-    startGame,
-    startNextRound,
-    resetToMenu,
-    resumeGame,
-    tryPlay,
-    tryFlip,
-    tryResolveFaceDown,
-    tryEatPile,
-    lastError,
-    aiThinkingIdx,
-    newAchievements,
+    state, startGame, startNextRound, resetToMenu, resumeGame,
+    tryPlay: (selected: SelectedCard[]) => humanAction(current => playCards(current, selected)),
+    tryFlip: (slot: number) => humanAction(current => flipFaceDown(current, slot), true),
+    tryResolveFaceDown: (chain: SelectedCard[]) => humanAction(current => resolveFaceDown(current, chain)),
+    tryEatPile: () => humanAction(voluntaryEatPile),
+    lastError, newAchievements,
     clearNewAchievements: () => setNewAchievements([]),
   };
 }
