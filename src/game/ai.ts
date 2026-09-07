@@ -2,6 +2,8 @@ import type { Card, GameState, Player, Rank, SelectedCard } from './types';
 import { activeTier, mustFlipFaceDown } from './engine';
 import {
   compareValue,
+  maxPlayableOfRank,
+  cardsOfRank,
   countSameRankOnTop,
   isEqualOrLower,
   isTen,
@@ -24,7 +26,8 @@ export function chooseAIMove(state: GameState, rng: RNG = Math.random): AIMove {
 
   if (state.pendingFaceDown && state.pendingFaceDown.playerIdx === state.currentPlayerIdx) {
     const flipped = state.pendingFaceDown.card;
-    return { type: 'resolveFaceDown', chain: buildFaceDownChain(player, flipped.rank, difficulty, rng) };
+    const cap = Math.max(0, maxPlayableOfRank(flipped.rank, state.pile, [flipped, ...cardsOfRank(player, flipped.rank)], state.rules) - 1);
+    return { type: 'resolveFaceDown', chain: buildFaceDownChain(player, flipped.rank, difficulty, rng).slice(0, cap) };
   }
 
   if (mustFlipFaceDown(player)) {
@@ -78,7 +81,7 @@ export function chooseAIMove(state: GameState, rng: RNG = Math.random): AIMove {
 
   if (rules.tenBurns) {
     const tens = pool.filter(s => isTen(s.card));
-    if (tens.length > 0 && (difficulty !== 'easy' || rng() > 0.3)) {
+    if (tens.length > 0) {
       return { type: 'play', selected: [{ card: tens[0].card, source: tens[0].source }] };
     }
   }

@@ -1,6 +1,15 @@
 # Swipe
 
-A polished, mobile-first implementation of the card game **Swipe** — built with Vite, React, TypeScript, Tailwind, and Motion.
+A warm, accessible, mobile-first version of the card game **Swipe**, built with Vite, React, TypeScript, and Tailwind.
+
+## The Card Club experience
+
+- **Three ways to play:** a configurable classic table, a shared daily deal, and a gentle practice table.
+- **Comfort-first play:** large cards by default, optional coaching, reduced motion, two table colours, sound controls, and adjustable computer-player pace.
+- **Clear turns:** cards are selected before they are committed, legal choices are highlighted, matching cards can be grouped, and potentially costly moves explain their result before play.
+- **Friendly progression:** local milestones, win history, automatic saves, and a full scorecard without accounts or tracking.
+- **Accessible controls:** keyboard-ready dialogs, visible focus states, WCAG AA colour contrast, and complete text labels for cards and controls.
+- **Offline-ready:** the production build includes an installable PWA and all fonts and sounds needed for play.
 
 ## Rules (this build)
 
@@ -18,11 +27,22 @@ A polished, mobile-first implementation of the card game **Swipe** — built wit
 ## Run it
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
 Then open `http://localhost:5173` on your phone (same Wi-Fi) or desktop.
+
+Node.js 22.12 or newer is required.
+
+## Quality checks
+
+```bash
+npm run lint       # TypeScript
+npm test           # rules, regressions, and complete simulated games
+npm run test:ui    # browser flows, responsive layouts, and WCAG AA checks
+npm run build      # production PWA
+```
 
 ## Deploy
 
@@ -36,8 +56,10 @@ For Vercel: `vercel --prod` from the project root, or import the repo on the das
 ## Architecture
 
 - `src/game/` — pure game logic. Engine, rules, deck, AI. No React.
-- `src/hooks/useSwipeGame.ts` — wraps engine in React reducer, drives AI auto-play.
-- `src/components/` — UI. Mobile-first, Tailwind + Motion.
+- `src/hooks/useSwipeGame.ts` — coordinates game state, saving, sounds, and paced computer turns.
+- `src/components/club/` — the responsive lobby, card table, dialogs, scoring, tutorial, and comfort controls.
+- `src/lib/preferences.ts` — local comfort settings.
+- `tests/club.spec.ts` — full browser and accessibility coverage.
 
 The engine is fully deterministic and pure (apart from the shuffle), so it's easy to add tests, replays, or networked multiplayer later.
 
@@ -51,20 +73,12 @@ Card foley from [Kenney — Casino Audio](https://kenney.nl/assets/casino-audio)
 domain), converted to AAC in `public/sounds/`. Playback adds random pitch/volume variation per
 play; see `src/lib/sound.ts`.
 
-## Roadmap ideas
-
-- Drag-to-play (swipe a card up onto the pile)
-- Hot-seat multi-human mode (toggle in start menu)
-- Persistent stats across games
-- Networked multiplayer via Cloudflare Durable Objects or Supabase Realtime
-- Difficulty levels for AI (current AI is intentionally beatable)
-
 ## Notes on the AI
 
 The current CPU is heuristic, not search-based. It:
 - Plays the most-copies-of-a-rank that's equal-or-lower, preferring higher legal ranks (saves low cards as defense).
-- Saves 10s for forced situations.
+- Uses 10s as legal burns when no ordinary safe play exists.
 - When forced higher, dumps the highest-scoring rank with most copies.
 - Auto-chains matching cards on face-down flips.
 
-It's beatable but should give a real game.
+Gentle, balanced, and clever difficulties tune its decisions while keeping the same rules as the player.

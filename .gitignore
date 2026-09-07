@@ -5,3 +5,6 @@ dist/
 ios/
 android/
 .wrangler/
+
+/test-results/
+/playwright-report/

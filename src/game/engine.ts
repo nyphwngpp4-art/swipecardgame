@@ -203,6 +203,18 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
     }
   }
 
+  const seenIds = new Set<string>();
+  for (const item of selected) {
+    if (seenIds.has(item.card.id)) return { ok: false, reason: 'A card can only be played once.' };
+    seenIds.add(item.card.id);
+    const actual = item.source.kind === 'hand'
+      ? player.hand.find(card => card.id === item.card.id)
+      : item.source.kind === 'faceUp' ? player.faceUp[item.source.slot] : null;
+    if (!actual || actual.id !== item.card.id || actual.rank !== item.card.rank || actual.suit !== item.card.suit) {
+      return { ok: false, reason: 'That card is no longer available. Choose a card from your hand or table.' };
+    }
+  }
+
   // Validate: same rank, sane quantity.
   const top = topOfPile(state.pile);
   const v = validateMultiPlay(cards, top, state.pile, state.rules);
@@ -370,6 +382,7 @@ export function flipFaceDown(state: GameState, slot: number): PlayResult {
  * Chaining face-up cards of the rank helps clear them to unlock the face-down slots.
  */
 export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayResult {
+  if (state.phase !== 'playing') return { ok: false, reason: 'Game not in playing phase.' };
   if (!state.pendingFaceDown) return { ok: false, reason: 'No face-down pending.' };
   if (state.currentPlayerIdx !== state.pendingFaceDown.playerIdx) {
     return { ok: false, reason: 'Wrong player.' };
@@ -381,7 +394,18 @@ export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayRe
     if (ch.card.rank !== card.rank) return { ok: false, reason: 'Chain cards must match rank.' };
   }
 
+  const validation = validateMultiPlay([card, ...chain.map(item => item.card)], topOfPile(state.pile), state.pile, state.rules);
+  if (!validation.ok) return validation;
   const player = state.players[state.currentPlayerIdx];
+  const seen = new Set([card.id]);
+  for (const item of chain) {
+    const actual = item.source.kind === 'hand' ? player.hand.find(c => c.id === item.card.id)
+      : item.source.kind === 'faceUp' ? player.faceUp[item.source.slot] : null;
+    if (!actual || actual.id !== item.card.id || actual.rank !== item.card.rank || actual.suit !== item.card.suit || seen.has(item.card.id)) {
+      return { ok: false, reason: 'Choose each matching card only once from your hand or table.' };
+    }
+    seen.add(item.card.id);
+  }
   const newPlayer = clonePlayer(player);
   newPlayer.faceDown[slot] = null;
   for (const ch of chain) {

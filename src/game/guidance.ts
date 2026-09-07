@@ -40,9 +40,10 @@ export function getRecommendedMove(state: GameState, playerIdx: number): GameHin
   }
   if (state.pendingFaceDown?.playerIdx === playerIdx) {
     const rank = state.pendingFaceDown.card.rank;
-    const matches = selectionsForRank(state, playerIdx, rank);
+    const cap = Math.max(0, maxPlayableOfRank(rank, state.pile, [state.pendingFaceDown.card, ...cardsOfRank(player, rank)], state.rules) - 1);
+    const matches = selectionsForRank(state, playerIdx, rank).slice(0, cap);
     return matches.length
-      ? { title: `Chain your ${rank}s`, body: 'Add every matching hand or face-up card before confirming to thin your stack.', cardIds: matches.map(s => s.card.id), action: 'play' }
+      ? { title: `Chain your ${rank}s`, body: 'Add the highlighted matching cards, then confirm your play.', cardIds: matches.map(s => s.card.id), action: 'play' }
       : { title: 'Resolve the flip', body: 'No matching cards can be chained. Confirm the revealed card.', cardIds: [], action: 'flip' };
   }
   if (activeTier(player) === 'faceDown') {

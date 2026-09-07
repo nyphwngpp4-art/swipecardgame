@@ -1,122 +1,56 @@
-import { AnimatePresence, motion } from 'motion/react';
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSwipeGame } from './hooks/useSwipeGame';
-import { StartMenu } from './components/StartMenu';
-import { GameBoardController } from './components/GameBoardController';
-import { GameOverModal, RoundEndModal } from './components/Modals';
-import { GuidanceOverlay } from './components/GuidanceOverlay';
+import { Lobby, loadHouseRules } from './components/club/Lobby';
+import { GameTable } from './components/club/GameTable';
+import { ComfortPanel, LearnPanel, ProgressPanel } from './components/club/ClubPanels';
+import { RoundResults } from './components/club/RoundResults';
+import { Dialog, Icon } from './components/club/Primitives';
 import { loadSavedGame } from './lib/persistence';
-import type { GameState } from './game/types';
+import { loadPreferences, savePreferences } from './lib/preferences';
+import { isMuted, setMuted, playSound } from './lib/sound';
+import type { NewGameOptions } from './game/engine';
 import type { Theme } from './theme';
+import './club.css';
 export type { Theme } from './theme';
 
+type Panel = 'learn' | 'settings' | 'progress' | 'pause' | 'restart' | null;
 export default function App() {
-  const {
-    state, startGame, startNextRound, resetToMenu, resumeGame,
-    tryPlay, tryFlip, tryResolveFaceDown, tryEatPile, lastError,
-    aiThinkingIdx, newAchievements, clearNewAchievements,
-  } = useSwipeGame();
-
-  const [savedGame, setSavedGame] = useState<GameState | null>(() => loadSavedGame());
-  // Cards the open hint panel points at — flows into GameBoard as props so
-  // highlighting stays React-rendered instead of direct DOM mutation
-  const [hintCardIds, setHintCardIds] = useState<string[]>([]);
-
-  useEffect(() => {
-    if (!state) setSavedGame(loadSavedGame());
-  }, [state]);
-
+  const [panel, setPanel] = useState<Panel>(null);
+  const [boardPaused, setBoardPaused] = useState(false);
+  const [preferences, setPreferences] = useState(loadPreferences);
+  const [sound, setSound] = useState(() => !isMuted());
+  const [savedGame, setSavedGame] = useState(loadSavedGame);
   const [theme, setTheme] = useState<Theme>(() => {
-    const saved = localStorage.getItem('swipe-theme') as Theme | null;
-    return saved === 'casino' ? 'casino' : 'classic';
+    try { return localStorage.getItem('swipe-theme') === 'casino' ? 'casino' : 'classic'; } catch { return 'classic'; }
   });
-
+  const game = useSwipeGame({ paused: panel !== null || boardPaused, pace: preferences.pace });
+  const { state } = game;
   useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-    localStorage.setItem('swipe-theme', theme);
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem('swipe-theme', theme); } catch { /* Optional storage. */ }
   }, [theme]);
-
-  const restartGame = () => {
+  useEffect(() => {
+    savePreferences(preferences);
+    document.documentElement.dataset.gentle = String(preferences.reducedMotion);
+  }, [preferences]);
+  const onPauseChange = useCallback((value: boolean) => setBoardPaused(value), []);
+  function toggleSound() { setMuted(sound); setSound(!sound); if (!sound) playSound('select'); }
+  function start(options: NewGameOptions) { setPanel(null); setBoardPaused(false); game.startGame(options); }
+  function restart() {
     if (!state) return;
-    startGame({
-      numPlayers: state.players.length,
-      humanCount: state.players.filter(player => player.isHuman).length,
-      targetScore: state.targetScore,
-      difficulty: state.difficulty,
-      rules: state.rules,
-      mode: state.mode ?? 'standard',
-      seed: state.mode === 'daily' ? state.seed : undefined,
-    });
-  };
-
-  return (
-    <div className="h-full w-full max-w-[520px] md:max-w-[620px] mx-auto relative px-1">
-      <AnimatePresence mode="wait">
-        {!state ? (
-          <StartMenu
-            key="menu"
-            onStart={startGame}
-            theme={theme}
-            onThemeChange={setTheme}
-            savedGame={savedGame}
-            onContinue={() => savedGame && resumeGame(savedGame)}
-          />
-        ) : (
-          <GameBoardController
-            key="board"
-            state={state}
-            onPlay={tryPlay}
-            onFlipFaceDown={tryFlip}
-            onResolveFaceDown={tryResolveFaceDown}
-            lastError={lastError}
-            aiThinkingIdx={aiThinkingIdx}
-            onEatPile={tryEatPile}
-            onRestart={restartGame}
-            onMainMenu={resetToMenu}
-            theme={theme}
-            onThemeChange={setTheme}
-            hintCardIds={hintCardIds}
-          />
-        )}
-      </AnimatePresence>
-
-      {state && <GuidanceOverlay state={state} onHighlightChange={setHintCardIds} />}
-
-      {state?.phase === 'roundEnd' && (
-        <RoundEndModal state={state} onContinue={startNextRound} />
-      )}
-      {state?.phase === 'gameOver' && (
-        <GameOverModal
-          state={state}
-          onNewGame={restartGame}
-          onMainMenu={resetToMenu}
-        />
-      )}
-
-      <AnimatePresence>
-        {newAchievements.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 12 }}
-            className="fixed bottom-5 left-1/2 z-[100] w-[min(90vw,390px)] -translate-x-1/2 rounded-2xl border border-brass-500/45 bg-felt-900/95 p-4 shadow-2xl backdrop-blur"
-          >
-            <div className="flex items-start gap-3">
-              <div className="text-2xl">🏆</div>
-              <div className="flex-1">
-                <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-brass-400">Achievement unlocked</div>
-                {newAchievements.map(achievement => (
-                  <div key={achievement.id} className="mt-1">
-                    <div className="font-display font-bold text-bone-100">{achievement.title}</div>
-                    <div className="text-xs text-bone-200/65">{achievement.description}</div>
-                  </div>
-                ))}
-              </div>
-              <button onClick={clearNewAchievements} className="text-xl leading-none text-bone-200/50" aria-label="Dismiss achievements">×</button>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-    </div>
-  );
+    start({ numPlayers: state.players.length, humanCount: state.players.filter(player => player.isHuman).length, targetScore: state.targetScore, difficulty: state.difficulty, rules: state.rules, mode: state.mode ?? 'standard', seed: state.mode === 'daily' ? state.seed : undefined });
+  }
+  function menu() { setPanel(null); setBoardPaused(false); game.resetToMenu(); setSavedGame(loadSavedGame()); }
+  function continueGame() { if (savedGame) { setPanel(null); setBoardPaused(false); game.resumeGame(savedGame); } }
+  const closePanel = () => setPanel(null);
+  return <div className="swipe-app">
+    {state ? <GameTable state={state} onPlay={game.tryPlay} onFlip={game.tryFlip} onResolve={game.tryResolveFaceDown} onTake={game.tryEatPile} onPause={() => setPanel('pause')} onLearn={() => setPanel('learn')} onSettings={() => setPanel('settings')} onPauseChange={onPauseChange} preferences={preferences} lastError={game.lastError} sound={sound} onSound={toggleSound} /> : <Lobby savedGame={savedGame} onContinue={continueGame} onStart={start} onLearn={() => setPanel('learn')} onSettings={() => setPanel('settings')} onProgress={() => setPanel('progress')} sound={sound} onSound={toggleSound} />}
+    {panel === 'settings' && <ComfortPanel preferences={preferences} onChange={setPreferences} theme={theme} onThemeChange={setTheme} sound={sound} onSound={toggleSound} onClose={closePanel} />}
+    {panel === 'learn' && <LearnPanel onClose={closePanel} rules={state?.rules ?? loadHouseRules()} />}
+    {panel === 'progress' && <ProgressPanel onClose={closePanel} />}
+    {panel === 'pause' && state && <Dialog title="We’ll keep your seat." eyebrow="GAME PAUSED" onClose={closePanel}><div className="pause-art"><Icon name="leaf" size={44} /></div><p className="panel-intro centered">Take a breath. Put the kettle on.<br />Everyone at the table can wait.</p><button className="primary-button full" onClick={closePanel}>Back to the game <Icon name="play" /></button><div className="pause-options"><button onClick={() => setPanel('settings')}><Icon name="settings" /> Comfort settings <Icon name="arrow" /></button><button onClick={() => setPanel('learn')}><Icon name="book" /> How to play <Icon name="arrow" /></button><button onClick={menu}><Icon name="home" /> Save & return to the club <Icon name="arrow" /></button><button onClick={() => setPanel('restart')}><Icon name="cards" /> Start a fresh game <Icon name="arrow" /></button></div><p className="form-footnote">Your game saves automatically on this device.</p></Dialog>}
+    {panel === 'restart' && <Dialog title="Ready for a fresh shuffle?" eyebrow="START AGAIN" onClose={() => setPanel('pause')}><p className="panel-intro">This replaces your current game and scores. Your table settings stay the same.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setPanel('pause')}>Keep this game</button><button className="primary-button" onClick={restart}>Shuffle & deal</button></div></Dialog>}
+    {state && (state.phase === 'roundEnd' || state.phase === 'gameOver') && <RoundResults state={state} onContinue={game.startNextRound} onRestart={restart} onMenu={menu} />}
+    {game.newAchievements.length > 0 && !state && <div className="achievement-toast" role="status"><Icon name="trophy" /><div><strong>A new little milestone</strong><p>{game.newAchievements.map(item => item.title).join(' · ')}</p></div><button className="icon-button" onClick={game.clearNewAchievements} aria-label="Dismiss achievement"><Icon name="close" /></button></div>}
+  </div>;
 }

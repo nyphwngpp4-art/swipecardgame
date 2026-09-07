@@ -11,11 +11,11 @@ export default defineConfig({
       manifest: {
         name: 'Swipe',
         short_name: 'Swipe',
-        description: 'A card game of nerve & timing',
-        theme_color: '#0F1B14',
-        background_color: '#0F1B14',
+        description: 'Your favourite seat at the card table. Relaxed games, daily deals, and a helping hand.',
+        theme_color: '#244b3c',
+        background_color: '#f7f5ed',
         display: 'standalone',
-        orientation: 'portrait',
+        orientation: 'any',
         icons: [
           { src: 'icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icon-512.png', sizes: '512x512', type: 'image/png' },
@@ -28,5 +28,9 @@ export default defineConfig({
       },
     }),
   ],
-  server: { port: 5173, host: true },
+  optimizeDeps: {
+    noDiscovery: true,
+    include: ['react', 'react-dom/client', '@capacitor/core', '@capacitor/haptics', '@capacitor/status-bar'],
+  },
+  server: { port: 5173, host: true, watch: { usePolling: true, interval: 500 } },
 });
