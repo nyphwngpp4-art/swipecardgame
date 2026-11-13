@@ -1,0 +1,295 @@
+/*
+ * The card table.
+ *
+ * The whole table fits one screen: header, felt, hand and action dock share
+ * the viewport height, and every card size derives from --hand-w so the
+ * layout scales as one piece from a 320px phone to a wide desktop. If a very
+ * short screen still cannot fit, only the middle section scrolls.
+ */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+
+.gt-shell{
+  --hand-w:clamp(48px,min(22vw,10.4dvh),88px);
+  --table-w:calc(var(--hand-w)*.66);
+  --pile-w:calc(var(--hand-w)*.9);
+  --opp-w:clamp(15px,calc(var(--hand-w)*.36),32px);
+  --pad:clamp(10px,2.4vw,34px);
+  height:100dvh;display:grid;grid-template-rows:auto minmax(0,1fr) auto;overflow:hidden;
+  max-width:1500px;margin:auto;
+}
+.gt-shell[data-large=true]{--hand-w:clamp(52px,min(26vw,11.8dvh),100px)}
+
+/* Every card on the table scales its type with its own width. */
+.gt-shell .club-card{--card-height:calc(var(--card-width)*1.4);border-radius:calc(var(--card-width)*.085)}
+.gt-shell .card-corner{font-size:calc(var(--card-width)*.25);top:calc(var(--card-width)*.08);left:calc(var(--card-width)*.08);gap:calc(var(--card-width)*.03)}
+.gt-shell .card-corner.bottom{top:auto;left:auto;right:calc(var(--card-width)*.08);bottom:calc(var(--card-width)*.08)}
+.gt-shell .card-pip{font-size:calc(var(--card-width)*.56);padding-top:calc(var(--card-width)*.06)}
+.gt-shell .card-back-mark{font-size:calc(var(--card-width)*.42)}
+.gt-shell .card-back-mark>span{font-size:calc(var(--card-width)*.16);margin-top:calc(var(--card-width)*.06)}
+.gt-shell .card-back-frame{inset:calc(var(--card-width)*.07)}
+.gt-shell .empty-card{font-size:calc(var(--card-width)*.34)}
+
+/* Header */
+.gt-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:max(8px,env(safe-area-inset-top)) var(--pad) 8px;border-bottom:1px solid var(--line);min-height:56px}
+.gt-header .brand{font-size:27px}
+.gt-header .brand .brand-mark{width:28px;height:34px;font-size:20px}
+.gt-title{display:flex;flex-direction:column;gap:3px;text-align:center;font-size:13px;color:#53634f;min-width:0}
+.gt-title .eyebrow{font-size:10px;letter-spacing:2px;color:var(--green)}
+.gt-title>span:last-child{white-space:nowrap}
+.gt-pause{min-height:44px;font-size:13px;padding:8px 15px;gap:8px}
+
+/* Main area */
+.gt-main{display:grid;grid-template-columns:minmax(0,1fr) 264px;gap:20px;padding:14px var(--pad) 0;min-height:0}
+.gt-play{display:flex;flex-direction:column;min-height:0;min-width:0;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
+.gt-sidebar{display:flex;flex-direction:column;gap:14px;overflow-y:auto;padding-bottom:14px;scrollbar-width:thin}
+.gt-sidebar .scorecard{padding:16px 18px 8px}
+.gt-sidebar .scorecard>p{margin:8px 0 10px;line-height:1.5}
+.gt-sidebar .score-row{padding:9px 0}
+.gt-sidebar .coach-card{padding:16px 18px}
+.gt-sidebar .coach-card h3{margin-top:6px}
+.gt-sidebar .coach-card p{margin:8px 0 12px;line-height:1.6}
+.gt-keys{font-size:11px;line-height:1.7;color:#53634f;padding:0 5px}
+.gt-keys b{font-weight:700;letter-spacing:.4px;margin-right:4px}
+.table-comfort{font-size:12px;align-self:center;color:#53634f}
+
+/* Felt */
+.gt-felt{position:relative;flex:1 0 auto;display:grid;grid-template-rows:auto minmax(0,1fr) auto;gap:clamp(4px,1dvh,12px);border-radius:22px;background:radial-gradient(ellipse at 50% 42%,#ffffff12,transparent 68%),var(--felt);color:#f6f3e4;box-shadow:inset 0 0 0 5px var(--felt-edge),inset 0 0 40px #11392244,0 9px 15px #294b3a12;padding:clamp(12px,2dvh,22px) clamp(10px,2vw,22px) clamp(10px,1.6dvh,16px);overflow:hidden}
+.gt-felt:before{content:'';position:absolute;inset:11px;border:1px solid #d9d3b32e;border-radius:14px;pointer-events:none}
+
+.gt-opponents{position:relative;display:grid;grid-template-columns:repeat(var(--seats),minmax(0,1fr));gap:8px;z-index:1}
+.gt-opponent{display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+.gt-opponent-id{display:flex;align-items:center;gap:9px;min-width:0}
+.gt-opponent-id>div:last-child{display:flex;flex-direction:column;min-width:0}
+.gt-opponent-id strong{font-size:14px;font-weight:600;line-height:1.2}
+.gt-opponent-count{font-size:12px;color:#d3ddca;white-space:nowrap}
+.gt-opponent-count i{color:inherit}
+.gt-opponent .avatar{width:34px;height:34px;font-size:21px;margin:0;flex-shrink:0;transition:outline-color .3s}
+.gt-opponent.is-active .avatar{outline-color:#e6d49a;animation:gt-ring 1.6s ease-in-out infinite}
+.gt-opponent-cards{display:flex;align-items:center;gap:calc(var(--opp-w)*.12)}
+.gt-opponent-cards .club-card{--card-width:var(--opp-w);box-shadow:0 1px 0 #d6d2bd,0 3px 4px #14342a36}
+.gt-opponent-cards .card-corner{font-size:calc(var(--card-width)*.36)}
+.gt-opponent-cards .card-corner.bottom{display:none}
+.gt-opponent-cards .card-pip{font-size:calc(var(--card-width)*.52);align-items:flex-end;justify-content:flex-end;padding:0 calc(var(--card-width)*.1) calc(var(--card-width)*.06)}
+.gt-opponent-cards .is-empty{border-color:#b9cbb04d;color:#c6d6bd80}
+.gt-opponent-hand{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:650;color:#e3ead9;margin-left:5px;padding:2px 6px;border-radius:20px;background:#00000026}
+.gt-opponent-status{font-size:11px;color:#d3ddca;min-height:15px;text-align:center;line-height:1.3;animation:gt-status .35s ease-out}
+.gt-opponent.is-active .gt-opponent-status{color:#f0e2ad;font-weight:600}
+
+.gt-center{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);align-items:center;gap:clamp(12px,2.4vw,28px);min-height:calc(var(--pile-w)*1.4 + 14px)}
+.gt-wordmark{justify-self:end;font-family:var(--serif);font-style:italic;letter-spacing:-3px;font-size:clamp(30px,5vw,58px);transform:rotate(-12deg);color:#eddfb51c;pointer-events:none;user-select:none}
+.gt-pile{position:relative;width:var(--pile-w);height:calc(var(--pile-w)*1.4);grid-column:2}
+.gt-pile-outline{position:absolute;inset:-9px;border:1px dashed #d4daba4a;border-radius:11px}
+.gt-pile-depth{position:absolute;inset:0;border-radius:7px;background:#e8e3d3;transform:translate(calc(var(--depth)*-1px),calc(var(--depth)*1.5px)) rotate(-6deg);box-shadow:calc(var(--depth)*-.6px) calc(var(--depth)*1px) 0 #cfc9b6,0 6px 12px #102f3c40}
+.gt-pile-empty{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#dfe3c4a6;gap:4px}
+.gt-pile-empty>span:first-child{font-size:calc(var(--pile-w)*.5);font-family:Georgia,serif;line-height:1}
+.gt-pile-empty>span:last-child{font-size:10px}
+.gt-pile-card{position:absolute;inset:0;transform:translate(var(--dx),var(--dy)) rotate(var(--tilt))}
+.gt-pile-card .club-card{--card-width:var(--pile-w);box-shadow:0 1px 0 #d9d5c3,0 7px 14px #102f3c3d}
+.gt-pile-info{display:flex;flex-direction:column;gap:3px;min-width:0}
+.gt-pile-info>strong{font-size:15px;font-weight:550;line-height:1.25}
+.gt-pile-info>span{font-size:12px;color:#d3ddca;line-height:1.35}
+.gt-meter{display:flex;align-items:center;gap:4px;margin-top:6px}
+.gt-meter>span{width:6px;height:15px;border-radius:2px;background:#ffffff24;transition:background .25s}
+.gt-meter>span.filled{background:#e2cd8f}
+.gt-meter small{font-size:10px;color:#d3ddca;margin-left:5px;white-space:nowrap}
+.gt-banner{position:absolute;inset:50% auto auto 50%;z-index:8;background:#f4ead1;color:#35533b;padding:12px 22px;border:1px solid #d9bf7e;border-radius:12px;box-shadow:0 10px 40px #15342659;display:flex;align-items:center;flex-direction:column;gap:3px;white-space:nowrap;animation:gt-banner 1.9s both;pointer-events:none;translate:-50% -50%}
+.gt-banner strong{font-family:var(--serif);font-size:22px;font-weight:450}
+.gt-banner>span{font-size:12px}
+.gt-banner svg{color:#8d6c27}
+
+.gt-mine{display:flex;flex-direction:column;align-items:center;gap:6px;position:relative;z-index:1}
+.gt-mine .eyebrow{display:flex;align-items:center;gap:7px;font-size:9px;letter-spacing:1.4px;color:#d3ddca}
+.gt-mine .status-dot{background:#e6d49a;box-shadow:0 0 0 3px #e6d49a2e;animation:gt-ring-dot 1.6s ease-in-out infinite}
+.gt-slots{display:flex;gap:clamp(8px,2.2vw,18px)}
+.gt-slot{position:relative;display:flex;flex-direction:column;align-items:center;gap:5px}
+.gt-slot .club-card{--card-width:var(--table-w);box-shadow:0 1px 0 #d6d2bd,0 4px 8px #102f3c40}
+.gt-slot>span{font-size:10px;color:#d3ddca;white-space:nowrap}
+.gt-slot.has-hidden:before{content:'';width:var(--table-w);height:calc(var(--table-w)*1.4);position:absolute;top:-5px;left:4px;background:var(--felt-edge);border:1px solid #d9c99f8c;border-radius:5px;transform:rotate(4deg)}
+.gt-slot .club-card.is-back.is-playable{animation:gt-breathe 2.2s ease-in-out infinite}
+.gt-slot .club-card.is-playable{outline-color:#e6d49a}
+.gt-slot .club-card.is-selected{outline-color:#f4ead1}
+.gt-slot .club-card:disabled{opacity:.78}
+.gt-slot .card-check{border-color:var(--felt)}
+
+/* Toolbar between the felt and the hand */
+.gt-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 4px 0;flex:none}
+.gt-hand-title{display:flex;align-items:center;gap:10px;font-family:var(--serif);font-size:21px;font-weight:500;letter-spacing:-.5px}
+.gt-hand-title small{font-family:'DM Sans Variable',sans-serif;font-size:12px;color:#53634f;font-weight:450;letter-spacing:0}
+.gt-you{width:30px;height:30px;border-radius:50%;background:var(--green);color:var(--white);display:flex;align-items:center;justify-content:center;font-size:18px}
+.gt-tools{display:flex;align-items:center;gap:16px}
+.gt-tools .text-button{font-size:12px;color:#4a5c46;gap:6px;min-height:40px}
+.gt-compact-only{display:none}
+
+/* The hand: an overlapping fan that always fits the width */
+.gt-hand{flex:none;padding:calc(var(--hand-w)*.2) 8px 10px;min-width:0}
+.gt-hand-row{display:flex;justify-content:center;position:relative}
+.gt-hand-row+.gt-hand-row{margin-top:calc(var(--hand-w)*-.62);z-index:1}
+.gt-hand-group{flex:0 1 calc(var(--hand-w) + 10px);min-width:22px;height:calc(var(--hand-w)*1.4)}
+.gt-hand-group:last-child{flex:0 0 var(--hand-w)}
+.gt-hand .club-card{--card-width:var(--hand-w);translate:0 var(--drag,0px);transition:transform .2s,translate .2s,box-shadow .2s,opacity .2s,outline-color .2s}
+.gt-hand[data-flick=true] .club-card:not(:disabled){touch-action:none}
+.gt-hand .club-card.is-dragging{transition:none;z-index:6;box-shadow:0 18px 26px #14342a47}
+.gt-hand .club-card:disabled{opacity:1;filter:saturate(.5) brightness(.93)}
+.gt-hand .club-card:disabled .card-corner,.gt-hand .club-card:disabled .card-pip{opacity:.5}
+.gt-hand .club-card.is-playable{outline:2px solid #5f8262;outline-offset:1px}
+.gt-hand .club-card.is-selected{outline:3px solid var(--green);outline-offset:2px;transform:translateY(calc(var(--hand-w)*-.2));z-index:4}
+.gt-hand .club-card:not(:disabled):is(button):hover{z-index:5}
+.gt-hand .club-card.is-burn{box-shadow:inset 0 5px 0 #d5a94a,0 3px 0 #e4e0d2,0 6px 10px #14342a21}
+.gt-hand .club-card.is-hinted:not(.is-selected){outline:3px solid #c7962c;outline-offset:2px;animation:gt-hint 1.3s ease-in-out infinite}
+.gt-hand .card-count{top:auto;right:auto;left:calc(var(--card-width)*.06);bottom:calc(var(--card-width)*.07);border:0;min-width:0;border-radius:5px;font-size:max(10px,calc(var(--card-width)*.15));line-height:1.6;padding:0 5px;background:var(--green)}
+.gt-hand .card-check{top:-9px;left:-7px}
+.gt-hand-empty{display:flex;align-items:center;justify-content:center;gap:12px;padding:18px 0;color:#4f6e45;font-size:14px}
+
+/* Action dock */
+.gt-dock{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:12px var(--pad) max(12px,env(safe-area-inset-bottom));border-top:1px solid var(--line);background:#fdfcf6;box-shadow:0 -4px 25px #27443108;z-index:5}
+.gt-guidance{display:flex;gap:12px;align-items:center;min-width:0;flex:1}
+.gt-guidance-icon{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#e9ede0;color:#6f7d63}
+.gt-guidance.is-mine .gt-guidance-icon{background:var(--green);color:#fffdf4}
+.gt-guidance strong{font-size:15px;font-weight:650;line-height:1.3;display:block}
+.gt-guidance p{font-size:13px;line-height:1.45;color:#55644c;margin-top:2px}
+.gt-guidance.is-error{animation:gt-nudge .4s}
+.gt-guidance.is-error p{color:#8a3a2f;font-weight:550}
+.gt-actions{display:flex;align-items:center;gap:14px;flex-shrink:0}
+.gt-actions .text-button{font-size:13px;white-space:nowrap}
+.gt-hint{min-height:48px;padding:10px 14px;font-size:13px;gap:8px}
+.gt-stepper{display:flex;align-items:center;border:1px solid var(--line);border-radius:9px;background:var(--white);overflow:hidden}
+.gt-stepper button{width:44px;height:48px;font-size:22px;line-height:1;color:var(--green)}
+.gt-stepper button:hover:not(:disabled){background:var(--paper-deep)}
+.gt-stepper span{min-width:46px;text-align:center;font-weight:700;font-size:15px;white-space:nowrap}
+.gt-stepper small{font-weight:450;font-size:11px;color:#55644c}
+.play-action{min-width:210px;font-size:15px;justify-content:space-between;min-height:52px;padding-inline:20px;white-space:nowrap}
+.play-action:disabled{background:#e3e8da;color:#55644c;opacity:1;box-shadow:none}
+.play-action.is-ready{animation:gt-ready 1.8s ease-in-out infinite}
+.gt-help{color:#55644c}
+
+/* Motion: cards travel between seats and the pile */
+.fx-land .club-card{animation:gt-land .42s cubic-bezier(.2,.75,.25,1) both;animation-delay:calc(var(--order,0)*70ms)}
+.gt-ghost{position:absolute;inset:0;z-index:7;pointer-events:none}
+.gt-ghost .gt-pile-card{opacity:0}
+.gt-ghost.fx-pickup .gt-pile-card{animation:gt-take .55s cubic-bezier(.5,0,.75,.4) both;animation-delay:calc(var(--order,0)*45ms)}
+.gt-ghost.fx-swipe .gt-pile-card{animation:gt-sweep .7s cubic-bezier(.4,0,.2,1) both;animation-delay:calc(var(--order,0)*55ms)}
+.gt-ghost.fx-burn .gt-pile-card{animation:gt-burn .8s ease-in both;animation-delay:calc(var(--order,0)*40ms)}
+.gt-flame{position:absolute;inset:-45%;border-radius:50%;background:radial-gradient(circle,#ffd98a 0,#f3a23c 30%,#d4582c00 68%);opacity:0;animation:gt-flame .8s ease-out both;mix-blend-mode:screen}
+.fx-deal{animation:gt-deal .38s cubic-bezier(.2,.8,.3,1) backwards}
+.gt-hand-group:nth-child(n+2) .fx-deal{animation-delay:40ms}
+.gt-hand-group:nth-child(n+4) .fx-deal{animation-delay:90ms}
+.gt-hand-group:nth-child(n+6) .fx-deal{animation-delay:140ms}
+.gt-hand-group:nth-child(n+8) .fx-deal{animation-delay:190ms}
+.gt-hand-group:nth-child(n+10) .fx-deal{animation-delay:240ms}
+.fx-reveal{animation:gt-reveal .45s ease-out both}
+
+@keyframes gt-land{from{opacity:0;translate:var(--fx-x,0) var(--fx-y,-30vh);rotate:-14deg;scale:1.12}60%{opacity:1}to{opacity:1;translate:0 0;rotate:0deg;scale:1}}
+@keyframes gt-take{from{opacity:1;translate:0 0}70%{opacity:1}to{opacity:0;translate:var(--fx-x,0) var(--fx-y,30vh);scale:.8}}
+@keyframes gt-sweep{from{opacity:1;translate:0 0}25%{opacity:1;translate:-8% 0;rotate:-4deg}to{opacity:0;translate:230% -18%;rotate:28deg}}
+@keyframes gt-burn{from{opacity:1;filter:none}35%{opacity:1;filter:sepia(1) saturate(4) brightness(1.08)}to{opacity:0;filter:sepia(1) saturate(5) brightness(.5);translate:0 -26%;scale:.86}}
+@keyframes gt-flame{0%{opacity:0;scale:.3}35%{opacity:.95;scale:1}100%{opacity:0;scale:1.35}}
+@keyframes gt-deal{from{opacity:0;translate:0 26px;scale:.94}}
+@keyframes gt-reveal{from{transform:rotateY(90deg) scale(1.08)}to{transform:rotateY(0) scale(1)}}
+@keyframes gt-banner{0%{opacity:0;scale:.9}14%,72%{opacity:1;scale:1}100%{opacity:0;scale:1}}
+@keyframes gt-ring{0%,100%{box-shadow:0 0 0 0 #e6d49a66}50%{box-shadow:0 0 0 7px #e6d49a00}}
+@keyframes gt-ring-dot{0%,100%{box-shadow:0 0 0 2px #e6d49a2e}50%{box-shadow:0 0 0 6px #e6d49a00}}
+@keyframes gt-breathe{0%,100%{box-shadow:0 0 0 0 #e6d49a00,0 4px 8px #102f3c40}50%{box-shadow:0 0 0 5px #e6d49a47,0 4px 8px #102f3c40}}
+@keyframes gt-hint{0%,100%{box-shadow:0 0 0 0 #c7962c00,0 6px 10px #14342a21}50%{box-shadow:0 0 0 6px #c7962c3d,0 6px 10px #14342a21}}
+@keyframes gt-ready{0%,100%{box-shadow:0 3px 0 #102b251c,0 0 0 0 #244b3c38}50%{box-shadow:0 3px 0 #102b251c,0 0 0 7px #244b3c00}}
+@keyframes gt-status{from{opacity:0;translate:0 4px}}
+@keyframes gt-nudge{20%{translate:-5px 0}45%{translate:4px 0}70%{translate:-2px 0}}
+
+/* Short desktop and laptop screens: trim ornament before shrinking cards. */
+@media(max-height:780px){
+  .gt-slot>span{display:none}
+  .gt-header{min-height:50px;padding-top:max(6px,env(safe-area-inset-top));padding-bottom:6px}
+  .gt-main{padding-top:10px}
+  .gt-dock{padding-top:9px;padding-bottom:max(9px,env(safe-area-inset-bottom))}
+}
+
+/* Tablets: the sidebar folds into dialogs. */
+@media(max-width:940px){
+  .gt-main{grid-template-columns:minmax(0,1fr)}
+  .gt-sidebar{display:none}
+  .gt-compact-only{display:inline-flex}
+  .gt-help{display:none}
+  .gt-dock{flex-direction:column;align-items:stretch;gap:9px}
+  .gt-actions{justify-content:space-between}
+  .gt-actions .gt-hint{margin-right:auto}
+  .play-action{min-width:0;flex:1;max-width:320px}
+}
+
+/* Phones */
+@media(max-width:700px){
+  .gt-shell{--table-w:calc(var(--hand-w)*.6);--pile-w:calc(var(--hand-w)*.82)}
+  .gt-shell[data-large=true]{--hand-w:clamp(52px,min(26vw,11.3dvh),100px)}
+  /* A second row of cards borrows its height from the felt. */
+  .gt-shell:not([data-rows="1"]){--table-w:calc(var(--hand-w)*.5);--pile-w:calc(var(--hand-w)*.66)}
+  .gt-shell:not([data-rows="1"]) .gt-mine .eyebrow{display:none}
+  .gt-shell:not([data-rows="1"]) .gt-felt{gap:3px;padding-top:10px;padding-bottom:8px}
+  .gt-hand-row+.gt-hand-row{margin-top:calc(var(--hand-w)*-.72)}
+  .gt-header .brand .brand-mark,.gt-header .brand small,.gt-sound{display:none}
+  .gt-header .brand{font-size:25px}
+  .gt-title{font-size:12px;gap:1px}
+  .gt-title .eyebrow{font-size:8px;letter-spacing:1.2px}
+  .gt-pause{font-size:12px;padding:8px 11px;gap:6px}
+  .gt-pause svg{width:15px}
+  .gt-main{padding-top:8px}
+  .gt-felt{border-radius:18px;box-shadow:inset 0 0 0 4px var(--felt-edge),inset 0 0 35px #11392233}
+  .gt-felt:before{inset:9px;border-radius:11px}
+  .gt-opponent{gap:4px}
+  .gt-opponent-id{gap:7px}
+  .gt-opponent .avatar{width:28px;height:28px;font-size:18px}
+  .gt-opponent-id strong{font-size:13px}
+  .gt-opponent-count{font-size:11px}
+  .gt-opponent-count>span{display:none}
+  .gt-opponent-hand{display:none}
+  .gt-opponent-status{font-size:10px}
+  .gt-wordmark{display:none}
+  .gt-center{gap:14px}
+  .gt-pile-info>strong{font-size:13px}
+  .gt-pile-info>span{font-size:11px}
+  .gt-meter small{font-size:9px}
+  .gt-banner{padding:10px 18px}
+  .gt-banner strong{font-size:19px}
+  .gt-mine{gap:5px}
+  .gt-mine .eyebrow{font-size:8px}
+  .gt-slot>span{display:none}
+  .gt-hand-title{display:none}
+  .gt-toolbar{padding:2px 2px 0}
+  .gt-tools{width:100%;justify-content:space-between;gap:8px}
+  .gt-tools .text-button{font-size:11px;gap:5px}
+  .gt-hand{padding-inline:6px;padding-bottom:6px}
+  .gt-header{min-height:48px}
+  .gt-dock{padding:9px 14px max(10px,env(safe-area-inset-bottom));gap:8px}
+  .gt-guidance{gap:9px}
+  .gt-guidance-icon{width:32px;height:32px}
+  .gt-guidance-icon svg{width:17px}
+  .gt-guidance strong{font-size:13px}
+  .gt-guidance p{font-size:12px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .gt-actions{gap:8px}
+  .gt-actions .text-button{font-size:12px}
+  .gt-hint{padding-inline:11px;font-size:12px;gap:5px}
+  .gt-hint svg{width:16px}
+  .gt-stepper button{width:38px}
+  .gt-stepper span{min-width:34px}
+  .gt-stepper small{display:none}
+  .play-action{font-size:13px;padding-inline:13px;min-height:48px;gap:6px}
+  .play-action svg{width:16px}
+}
+@media(max-width:380px){
+  .gt-tools{gap:4px}
+  .gt-tools .text-button{font-size:10.5px;gap:4px}
+  .gt-tools .text-button svg{width:14px}
+  .gt-dock{padding-inline:10px}
+  .gt-actions{gap:6px}
+  .gt-hint{padding-inline:9px}
+  .play-action{white-space:normal;text-align:left;line-height:1.2;font-size:12px;padding-inline:11px}
+}
+/* Four or five seats on a narrow phone: stack each opponent's name. */
+@media(max-width:480px){
+  .gt-opponents:not([style*="--seats: 2"]):not([style*="--seats:2"]) .gt-opponent-id{flex-direction:column;gap:2px;text-align:center}
+  .gt-opponents:not([style*="--seats: 2"]):not([style*="--seats:2"]) .gt-opponent-id>div:last-child{flex-direction:row;align-items:baseline;gap:5px}
+  .gt-opponents:not([style*="--seats: 2"]):not([style*="--seats:2"]) .gt-opponent-count i{display:none}
+  .gt-opponents:not([style*="--seats: 2"]):not([style*="--seats:2"]) .avatar{width:24px;height:24px;font-size:15px}
+  .gt-opponents:not([style*="--seats: 2"]):not([style*="--seats:2"]){--opp-w:clamp(13px,calc((100vw - 60px)/var(--seats)/4 - 3px),26px)}
+}
+
+/* Stillness on request: anything that only exists to animate stays hidden. */
+@media(prefers-reduced-motion:reduce){.gt-banner{display:none}.gt-hand .club-card{translate:none}}
+[data-gentle=true] .gt-banner{display:none}

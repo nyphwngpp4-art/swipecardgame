@@ -36,7 +36,7 @@ export function getRecommendedMove(state: GameState, playerIdx: number): GameHin
     return { title: 'Round complete', body: 'Review the scorecard, then continue.', cardIds: [], action: 'wait' };
   }
   if (state.currentPlayerIdx !== playerIdx) {
-    return { title: 'Watch the table', body: 'Notice which ranks opponents are clearing and which special cards they spend.', cardIds: [], action: 'wait' };
+    return { title: 'Watch the table', body: 'Notice which ranks the others are clearing, and how many cards each has left.', cardIds: [], action: 'wait' };
   }
   if (state.pendingFaceDown?.playerIdx === playerIdx) {
     const rank = state.pendingFaceDown.card.rank;
@@ -52,13 +52,6 @@ export function getRecommendedMove(state: GameState, playerIdx: number): GameHin
 
   const available: Card[] = [...player.hand, ...player.faceUp.filter((c): c is Card => c !== null)];
   const top = topOfPile(state.pile);
-
-  if (state.rules.tenBurns) {
-    const ten = available.find(isTen);
-    if (ten && state.pile.length >= 4) {
-      return { title: 'Burn the pile', body: 'A 10 clears this growing pile and gives you another turn.', cardIds: [ten.id], action: 'burn' };
-    }
-  }
 
   if (state.rules.fourOfAKindSwipes && top) {
     const onTop = countSameRankOnTop(state.pile, top.rank);
@@ -88,7 +81,7 @@ export function getRecommendedMove(state: GameState, playerIdx: number): GameHin
   const ranks = [...new Set(available.map(c => c.rank))].sort((a, b) => compareValue(available.find(c => c.rank === b)!) - compareValue(available.find(c => c.rank === a)!));
   const rank = ranks[0];
   const picks = selectionsForRank(state, playerIdx, rank);
-  return { title: 'No safe play', body: `Dump your high ${rank}${picks.length > 1 ? 's' : ''} and take the pile, or voluntarily take it first if that creates a swipe.`, cardIds: picks.map(s => s.card.id), action: 'pickup' };
+  return { title: 'No safe play', body: `Nothing equal or lower. Play your ${rank}${picks.length > 1 ? 's' : ''} to shed your most expensive cards, then pick up the pile.`, cardIds: picks.map(s => s.card.id), action: 'pickup' };
 }
 
 export function explainRuleError(reason: string, state: GameState, playerIdx: number): { message: string; suggestedCardIds: string[] } {

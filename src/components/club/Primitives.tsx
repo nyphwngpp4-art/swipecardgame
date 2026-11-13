@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, type ReactNode, type CSSProperties } from 'react';
+import { useEffect, useId, useRef, type ButtonHTMLAttributes, type ReactNode, type CSSProperties } from 'react';
 import type { Card } from '../../game/types';
 
 export function Icon({ name, size = 20 }: { name: string; size?: number }) {
@@ -29,19 +29,24 @@ export function Icon({ name, size = 20 }: { name: string; size?: number }) {
 export const suitName: Record<string, string> = { '♠': 'spades', '♥': 'hearts', '♦': 'diamonds', '♣': 'clubs' };
 const rankName: Record<string, string> = { A: 'Ace', J: 'Jack', Q: 'Queen', K: 'King' };
 export function cardName(card: Card) { return `${rankName[card.rank] ?? card.rank} of ${suitName[card.suit]}`; }
-export function CardFace({ card, back, small, selected, playable, onClick, disabled, label, count, style }: {
+export function CardFace({ card, back, small, selected, playable, onClick, disabled, label, count, style, className: extraClass = '', gesture, badge }: {
   card?: Card; back?: boolean; small?: boolean; selected?: boolean; playable?: boolean;
   onClick?: () => void; disabled?: boolean; label?: string; count?: number; style?: CSSProperties;
+  className?: string;
+  /** Replaces the default ×N stack badge text. */
+  badge?: string;
+  /** Extra pointer handlers for drag gestures on interactive cards. */
+  gesture?: Pick<ButtonHTMLAttributes<HTMLButtonElement>, 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>;
 }) {
   const content = back ? <><div className="card-back-frame" /><span className="card-back-mark">S<span>♠</span></span></> : card ? <>
     <span className="card-corner"><b>{card.rank}</b><span>{card.suit}</span></span>
     <span className="card-pip">{card.suit}</span>
     <span className="card-corner bottom"><b>{card.rank}</b><span>{card.suit}</span></span>
     {selected && <span className="card-check"><Icon name="check" size={14} /></span>}
-    {count && count > 1 ? <span className="card-count">×{count}</span> : null}
+    {badge || (count && count > 1) ? <span className="card-count">{badge ?? `×${count}`}</span> : null}
   </> : <span className="empty-card">✓</span>;
-  const className = `club-card ${back ? 'is-back' : ''} ${small ? 'is-small' : ''} ${card && ['♥', '♦'].includes(card.suit) ? 'red-card' : ''} ${selected ? 'is-selected' : ''} ${playable ? 'is-playable' : ''} ${!card && !back ? 'is-empty' : ''}`;
-  return onClick ? <button type="button" data-card-id={card?.id} className={className} style={style} onClick={onClick} disabled={disabled} aria-pressed={back ? undefined : !!selected} aria-label={label ?? (card ? cardName(card) : 'Reveal face-down card')}>{content}</button>
+  const className = `club-card ${back ? 'is-back' : ''} ${small ? 'is-small' : ''} ${card && ['♥', '♦'].includes(card.suit) ? 'red-card' : ''} ${selected ? 'is-selected' : ''} ${playable ? 'is-playable' : ''} ${!card && !back ? 'is-empty' : ''} ${extraClass}`;
+  return onClick ? <button type="button" data-card-id={card?.id} className={className} style={style} onClick={onClick} {...gesture} disabled={disabled} aria-pressed={back ? undefined : !!selected} aria-label={label ?? (card ? cardName(card) : 'Reveal face-down card')}>{content}</button>
     : <div className={className} style={style} role="img" aria-label={label ?? (back ? 'Face-down card' : card ? cardName(card) : 'Empty card space')}>{content}</div>;
 }
 

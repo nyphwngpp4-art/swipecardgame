@@ -11,6 +11,7 @@ import { isMuted, setMuted, playSound } from './lib/sound';
 import type { NewGameOptions } from './game/engine';
 import type { Theme } from './theme';
 import './club.css';
+import './table.css';
 export type { Theme } from './theme';
 
 type Panel = 'learn' | 'settings' | 'progress' | 'pause' | 'restart' | null;
@@ -40,17 +41,17 @@ export default function App() {
     if (!state) return;
     start({ numPlayers: state.players.length, humanCount: state.players.filter(player => player.isHuman).length, targetScore: state.targetScore, difficulty: state.difficulty, rules: state.rules, mode: state.mode ?? 'standard', seed: state.mode === 'daily' ? state.seed : undefined });
   }
-  function menu() { setPanel(null); setBoardPaused(false); game.resetToMenu(); setSavedGame(loadSavedGame()); }
+  function menu() { setPanel(null); setBoardPaused(false); game.clearNewAchievements(); game.resetToMenu(); setSavedGame(loadSavedGame()); }
+  function practice() { start({ numPlayers: 3, humanCount: 1, targetScore: 100, difficulty: 'easy', mode: 'practice', rules: loadHouseRules() }); }
   function continueGame() { if (savedGame) { setPanel(null); setBoardPaused(false); game.resumeGame(savedGame); } }
   const closePanel = () => setPanel(null);
   return <div className="swipe-app">
     {state ? <GameTable state={state} onPlay={game.tryPlay} onFlip={game.tryFlip} onResolve={game.tryResolveFaceDown} onTake={game.tryEatPile} onPause={() => setPanel('pause')} onLearn={() => setPanel('learn')} onSettings={() => setPanel('settings')} onPauseChange={onPauseChange} preferences={preferences} lastError={game.lastError} sound={sound} onSound={toggleSound} /> : <Lobby savedGame={savedGame} onContinue={continueGame} onStart={start} onLearn={() => setPanel('learn')} onSettings={() => setPanel('settings')} onProgress={() => setPanel('progress')} sound={sound} onSound={toggleSound} />}
     {panel === 'settings' && <ComfortPanel preferences={preferences} onChange={setPreferences} theme={theme} onThemeChange={setTheme} sound={sound} onSound={toggleSound} onClose={closePanel} />}
-    {panel === 'learn' && <LearnPanel onClose={closePanel} rules={state?.rules ?? loadHouseRules()} />}
+    {panel === 'learn' && <LearnPanel onClose={closePanel} onPractice={state ? undefined : practice} rules={state?.rules ?? loadHouseRules()} />}
     {panel === 'progress' && <ProgressPanel onClose={closePanel} />}
     {panel === 'pause' && state && <Dialog title="We’ll keep your seat." eyebrow="GAME PAUSED" onClose={closePanel}><div className="pause-art"><Icon name="leaf" size={44} /></div><p className="panel-intro centered">Take a breath. Put the kettle on.<br />Everyone at the table can wait.</p><button className="primary-button full" onClick={closePanel}>Back to the game <Icon name="play" /></button><div className="pause-options"><button onClick={() => setPanel('settings')}><Icon name="settings" /> Comfort settings <Icon name="arrow" /></button><button onClick={() => setPanel('learn')}><Icon name="book" /> How to play <Icon name="arrow" /></button><button onClick={menu}><Icon name="home" /> Save & return to the club <Icon name="arrow" /></button><button onClick={() => setPanel('restart')}><Icon name="cards" /> Start a fresh game <Icon name="arrow" /></button></div><p className="form-footnote">Your game saves automatically on this device.</p></Dialog>}
     {panel === 'restart' && <Dialog title="Ready for a fresh shuffle?" eyebrow="START AGAIN" onClose={() => setPanel('pause')}><p className="panel-intro">This replaces your current game and scores. Your table settings stay the same.</p><div className="dialog-actions"><button className="secondary-button" onClick={() => setPanel('pause')}>Keep this game</button><button className="primary-button" onClick={restart}>Shuffle & deal</button></div></Dialog>}
-    {state && (state.phase === 'roundEnd' || state.phase === 'gameOver') && <RoundResults state={state} onContinue={game.startNextRound} onRestart={restart} onMenu={menu} />}
-    {game.newAchievements.length > 0 && !state && <div className="achievement-toast" role="status"><Icon name="trophy" /><div><strong>A new little milestone</strong><p>{game.newAchievements.map(item => item.title).join(' · ')}</p></div><button className="icon-button" onClick={game.clearNewAchievements} aria-label="Dismiss achievement"><Icon name="close" /></button></div>}
+    {state && (state.phase === 'roundEnd' || state.phase === 'gameOver') && <RoundResults state={state} achievements={game.newAchievements} onContinue={game.startNextRound} onRestart={restart} onMenu={menu} />}
   </div>;
 }

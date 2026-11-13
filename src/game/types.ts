@@ -66,6 +66,10 @@ export interface GameEvent {
     | 'faceDownFailure'
     | 'roundEnd';
   playerIdx: number;
+  /** Cards laid on the pile by a play or a resolved face-down flip. */
+  cards?: Card[];
+  /** Cards taken into hand by a pickup or a voluntary take. */
+  count?: number;
 }
 
 export interface GameState {
@@ -92,4 +96,6 @@ export interface GameState {
   /** Monotonic count of committed actions — seeds per-turn AI randomness so
    *  repeated board states never replay identical CPU decisions. */
   turnCount?: number;
+  /** Points each player added in every finished round, oldest first. */
+  roundHistory?: number[][];
 }

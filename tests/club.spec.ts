@@ -169,6 +169,7 @@ test('finishing the last card shows game results and starts another game', async
   await page.getByRole('button', { name: 'Play A', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'A lovely little victory.' })).toBeVisible();
   await expect(page.getByText('The lowest score. The biggest smile.')).toBeVisible();
+  await expect(page.getByText(/New milestones|A new milestone/)).toBeVisible();
   await page.getByRole('button', { name: 'One more game?' }).click();
   await expect.poll(async () => (await saved(page)).phase).toBe('playing');
   expect((await saved(page)).scores).toEqual([0, 0, 0]);
@@ -209,6 +210,84 @@ test('five-player tables remain usable from the smallest phone through tablet', 
     await expect(page.getByRole('heading', { name: 'We’ll keep your seat.' })).toBeVisible();
     await page.keyboard.press('Escape');
   }
+});
+
+test('the whole table fits one screen with no scrolling', async ({ page }) => {
+  for (const viewport of [{ width: 390, height: 664 }, { width: 375, height: 667 }, { width: 1280, height: 720 }, { width: 1366, height: 768 }]) {
+    await page.setViewportSize(viewport);
+    await saveFixture(page);
+    const fit = await page.evaluate(() => {
+      const play = document.querySelector('.gt-play')!;
+      return { table: play.scrollHeight - play.clientHeight, page: document.documentElement.scrollHeight - innerHeight };
+    });
+    expect(fit.table, `table overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(4);
+    expect(fit.page, `page overflow at ${viewport.width}x${viewport.height}`).toBeLessThanOrEqual(0);
+    await expect(page.getByRole('button', { name: '5 of spades, 2 matching cards', exact: true })).toBeInViewport({ ratio: 0.9 });
+    await expect(page.getByRole('button', { name: 'Queen of spades, table card 3', exact: true })).toBeInViewport({ ratio: 0.9 });
+    await expect(page.getByRole('img', { name: /^Pile: 7 of hearts on top/ })).toBeInViewport({ ratio: 0.9 });
+    await expect(page.locator('.play-action')).toBeInViewport({ ratio: 1 });
+  }
+});
+
+test('flicking a card toward the pile plays it; a costly play still asks first', async ({ page }) => {
+  await saveFixture(page);
+  const fives = page.getByRole('button', { name: '5 of spades, 2 matching cards', exact: true });
+  const box = (await fives.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 20, box.y + box.height / 2 - 40, { steps: 4 });
+  await page.mouse.move(box.x + 20, box.y + box.height / 2 - 90, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await saved(page)).turnCount).toBe(1);
+  expect((await saved(page)).pile.map((card: { rank: string }) => card.rank)).toEqual(['9', '7', '5', '5']);
+});
+
+test('keyboard and the count stepper choose how many cards to play', async ({ page }) => {
+  await saveFixture(page);
+  await page.keyboard.press('5');
+  await expect(page.getByRole('button', { name: 'Play 3 matching cards' })).toBeEnabled();
+  await page.getByRole('button', { name: 'One fewer 5' }).click();
+  await page.getByRole('button', { name: 'One fewer 5' }).click();
+  await expect(page.getByRole('button', { name: 'Play 5', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'One fewer 5' })).toBeDisabled();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Select cards to play' })).toBeDisabled();
+  await page.keyboard.press('1');
+  await expect(page.getByRole('button', { name: 'Burn the pile', exact: true })).toBeEnabled();
+  await page.locator('body').click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await saved(page)).pile.length).toBe(0);
+  expect((await saved(page)).currentPlayerIdx).toBe(0);
+});
+
+test('an opponent’s move is shown at their seat and on the pile', async ({ page }) => {
+  await saveFixture(page, 'opponent');
+  const seat = page.locator('.gt-opponent').first();
+  await expect(seat.locator('.gt-opponent-status')).toHaveText('Thinking…');
+  await expect(seat.locator('.gt-opponent-status')).toHaveText(/^(Played|Burned|Swiped|Took|Flipped)/, { timeout: 6000 });
+});
+
+test('a finished daily deal records a result, a streak, and a shareable summary', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await saveFixture(page, 'game-over-ready');
+  await page.evaluate(() => {
+    const save = JSON.parse(localStorage.getItem('swipe-saved-game')!);
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    save.state.mode = 'daily';
+    save.state.seed = `daily-${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+    localStorage.setItem('swipe-saved-game', JSON.stringify(save));
+  });
+  await page.reload();
+  await page.getByRole('button', { name: 'Continue your game' }).click();
+  await page.getByRole('button', { name: 'Ace of spades', exact: true }).click();
+  await page.getByRole('button', { name: 'Play A', exact: true }).click();
+  await expect(page.getByText('Today’s deal: 1st of 3')).toBeVisible();
+  await page.getByRole('button', { name: 'Share result' }).click();
+  await expect(page.getByRole('button', { name: 'Copied ✓' })).toBeVisible();
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toContain('1st of 3 · 0 pts · 1 round');
+  await page.getByRole('button', { name: 'Back to the club' }).click();
+  await expect(page.getByText('Today’s deal won ✓')).toBeVisible();
 });
 
 test('home and game pass WCAG AA automated accessibility checks', async ({ page }) => {
