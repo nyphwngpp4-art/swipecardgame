@@ -1,15 +1,16 @@
 {
   "name": "swipe",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "dev": "node scripts/vite.mjs dev",
     "build": "tsc -b && node scripts/vite.mjs build",
     "preview": "node scripts/vite.mjs preview",
     "lint": "tsc --noEmit",
-    "test": "tsx src/__test/extraction.ts && tsx src/__test/smoke.ts && tsx src/__test/fullgame.ts && tsx src/__test/interaction-rules.ts",
-    "test:ui": "playwright test"
+    "test": "tsx src/__test/extraction.ts && tsx src/__test/smoke.ts && tsx src/__test/fullgame.ts && tsx src/__test/interaction-rules.ts && tsx src/__test/quality.ts",
+    "test:ui": "playwright test",
+    "bench:ai": "tsx src/__test/ai-bench.ts"
   },
   "dependencies": {
     "@capacitor/core": "^8.4.0",

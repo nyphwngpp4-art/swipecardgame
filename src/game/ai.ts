@@ -20,6 +20,26 @@ export type AIMove =
 
 type Sourced = { card: Card; source: SelectedCard['source'] };
 
+/** How often the balanced CPU settles for its second-best legal rank. */
+export const MEDIUM_SLIP = 0.2;
+
+/**
+ * Weights for the clever difficulty, tuned with `npm run bench:ai`.
+ * Notes from tuning (3,000 seeded rounds per setting): rushing to clear
+ * face-up cards, playing low to "block" a nearly-out neighbour, and burning
+ * early all cost points, so the clever CPU does none of them.
+ */
+export const HARD = {
+  perCard: 30,          // value of each extra card shed in one play
+  rankWeight: 3,        // preference for higher legal ranks (keeps low cards as exits)
+  lowCardPenalty: 12,   // reluctance to spend an Ace or 2
+  shedAt: 4,            // once an opponent is this close to going out…
+  shedWeight: 3,        // …favour dumping expensive cards
+  forcedPoints: 12,     // forced pickup: prefer dumping expensive ranks
+  forcedCount: 8,
+  forcedPileMatch: 15,
+};
+
 export function chooseAIMove(state: GameState, rng: RNG = Math.random): AIMove {
   const difficulty = state.difficulty || 'medium';
   const player = state.players[state.currentPlayerIdx];
@@ -70,6 +90,8 @@ export function chooseAIMove(state: GameState, rng: RNG = Math.random): AIMove {
     let chosen = legalLowerRanks[0];
     if (difficulty === 'easy' && legalLowerRanks.length > 1 && rng() < 0.45) {
       chosen = legalLowerRanks[Math.floor(rng() * legalLowerRanks.length)];
+    } else if (difficulty === 'medium' && legalLowerRanks.length > 1 && rng() < MEDIUM_SLIP) {
+      chosen = legalLowerRanks[1];
     }
     const cap = capForRank(chosen);
     const items = sortForPlay(byRank.get(chosen)!, difficulty);
@@ -106,8 +128,9 @@ function scoreLegalRank(
 ): number {
   const items = byRank.get(rank)!;
   const sample = items[0].card;
-  let score = items.length * 30 + compareValue(sample);
-  if (items.some(item => item.source.kind === 'faceUp')) score += difficulty === 'hard' ? 28 : 14;
+  const hard = difficulty === 'hard';
+  let score = items.length * (hard ? HARD.perCard : 30) + compareValue(sample) * (hard ? HARD.rankWeight : 1);
+  if (!hard && items.some(item => item.source.kind === 'faceUp')) score += 14;
   if (state.rules.fourOfAKindSwipes) {
     const top = topOfPile(state.pile);
     if (top?.rank === rank) {
@@ -117,10 +140,8 @@ function scoreLegalRank(
     }
   }
   if (difficulty === 'hard') {
-    const nextIdx = (state.currentPlayerIdx + 1) % state.players.length;
-    const nextCards = state.players[nextIdx].hand.length + state.players[nextIdx].faceUp.filter(Boolean).length + state.players[nextIdx].faceDown.filter(Boolean).length;
-    if (nextCards <= 5) score += compareValue(sample) * 4;
-    if (rank === 'A' || rank === '2') score -= 12;
+    if (rank === 'A' || rank === '2') score -= HARD.lowCardPenalty;
+    if (fewestOpponentCards(state) <= HARD.shedAt) score += scoreValue(sample) * items.length * HARD.shedWeight;
   }
   return score;
 }
@@ -134,10 +155,22 @@ function scoreForcedRank(
   const cards = byRank.get(rank)!;
   const pileMatches = state.pile.filter(card => card.rank === rank).length;
   const canSwipe = pileMatches + Math.min(cards.length, 4) >= 4;
-  let score = scoreValue(cards[0].card) * 12 + cards.length * 8 + pileMatches * 15;
+  const hard = difficulty === 'hard';
+  let score = scoreValue(cards[0].card) * (hard ? HARD.forcedPoints : 12) + cards.length * (hard ? HARD.forcedCount : 8) + pileMatches * (hard ? HARD.forcedPileMatch : 15);
   if (canSwipe) score += 120;
-  if (difficulty === 'hard' && cards.some(card => card.source.kind === 'faceUp')) score += 25;
   return score;
+}
+
+function countCards(player: Player): number {
+  return player.hand.length + player.faceUp.filter(Boolean).length + player.faceDown.filter(Boolean).length;
+}
+
+function fewestOpponentCards(state: GameState): number {
+  let fewest = Infinity;
+  state.players.forEach((player, index) => {
+    if (index !== state.currentPlayerIdx) fewest = Math.min(fewest, countCards(player));
+  });
+  return fewest;
 }
 
 function buildPool(player: Player, tier: ReturnType<typeof activeTier>): Sourced[] {

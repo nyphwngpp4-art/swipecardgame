@@ -2,7 +2,6 @@ import type { Card, GameEvent, GameMetrics, GameMode, GameState, HouseRules, Pla
 import { deal, handSort } from './deck';
 import { createSeededRng, randomSeed } from '../lib/random';
 import {
-  compareValue,
   DEFAULT_RULES,
   extractMatchingFromPile,
   hasAnyLegalLowerPlay,
@@ -192,12 +191,7 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
     return { ok: false, reason: 'You must flip a face-down card.' };
   }
   for (const sel of selected) {
-    if (tier === 'hand' && sel.source.kind !== 'hand') {
-      // When hand has cards, you cannot play face-up cards yet.
-      // Exception: same-rank multi-card from hand+faceUp is allowed in some house rules,
-      // but per Jay's spec, hand and face-up are interchangeable (the example was 2 hand kings + 1 face-up king at round start when hand is full).
-      // So we permit mixed hand+faceUp plays.
-    }
+    // Hand and face-up cards are interchangeable: a play may mix both.
     if (sel.source.kind === 'faceDown') {
       return { ok: false, reason: 'Use Flip to play a face-down card.' };
     }
@@ -255,7 +249,7 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
     pile: newPile,
   };
 
-  const events: GameEvent[] = [{ type: 'play', playerIdx: state.currentPlayerIdx }];
+  const events: GameEvent[] = [{ type: 'play', playerIdx: state.currentPlayerIdx, cards }];
 
   // Narrate
   const cardLabel = cards.length === 1
@@ -288,10 +282,10 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
       nextState,
       `${player.name} picked up ${pickedUp.length} card${pickedUp.length === 1 ? '' : 's'}${keptLabel}.`
     );
-    events.push({ type: 'pickup', playerIdx: state.currentPlayerIdx });
+    events.push({ type: 'pickup', playerIdx: state.currentPlayerIdx, count: pickedUp.length });
   }
 
-  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, playingHigher, events) };
+  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, events) };
 }
 
 /**
@@ -303,7 +297,6 @@ export function playCards(state: GameState, selected: SelectedCard[]): PlayResul
 function resolvePileAndAdvance(
   state: GameState,
   actingPlayerIdx: number,
-  forcedHigherPickup: boolean,
   events: GameEvent[],
 ): GameState {
   let s = state;
@@ -332,11 +325,6 @@ function resolvePileAndAdvance(
     return stampAction({ ...s, currentPlayerIdx: actingPlayerIdx }, events);
   }
 
-  // If they played higher and picked up, turn passes (they didn't really get a clean play).
-  // Otherwise advance normally.
-  if (forcedHigherPickup) {
-    return stampAction({ ...s, currentPlayerIdx: nextPlayerIdx(s) }, events);
-  }
   return stampAction({ ...s, currentPlayerIdx: nextPlayerIdx(s) }, events);
 }
 
@@ -373,7 +361,7 @@ export function flipFaceDown(state: GameState, slot: number): PlayResult {
       ...state,
       pendingFaceDown: { playerIdx: state.currentPlayerIdx, slot, card },
       log: [`${player.name} flipped a face-down: ${card.rank}${card.suit}.`, ...state.log].slice(0, 12),
-    }, [{ type: 'flip', playerIdx: state.currentPlayerIdx }]),
+    }, [{ type: 'flip', playerIdx: state.currentPlayerIdx, cards: [card] }]),
   };
 }
 
@@ -460,21 +448,15 @@ export function resolveFaceDown(state: GameState, chain: SelectedCard[]): PlayRe
       `${player.name} flipped ${card.rank}${chainLabel} — too high; picked up ${pickedUp.length}${keptLabel}.`
     );
     events.push(
-      { type: 'faceDownFailure', playerIdx: state.currentPlayerIdx },
-      { type: 'pickup', playerIdx: state.currentPlayerIdx },
+      { type: 'faceDownFailure', playerIdx: state.currentPlayerIdx, cards: allCards },
+      { type: 'pickup', playerIdx: state.currentPlayerIdx, count: pickedUp.length },
     );
   } else {
     nextState = logPush(nextState, `${player.name} flipped ${card.rank}${chainLabel}.`);
-    events.push({ type: 'faceDownSuccess', playerIdx: state.currentPlayerIdx });
+    events.push({ type: 'faceDownSuccess', playerIdx: state.currentPlayerIdx, cards: allCards });
   }
 
-  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, isHigher, events) };
-}
-
-/** Cancel a pending face-down (only meaningful pre-resolve; here we always require resolve). */
-export function cancelPendingFaceDown(state: GameState): GameState {
-  // We do not allow cancellation per rules: once flipped, it's committed.
-  return state;
+  return { ok: true, state: resolvePileAndAdvance(nextState, state.currentPlayerIdx, events) };
 }
 
 /**
@@ -506,7 +488,7 @@ export function voluntaryEatPile(state: GameState): PlayResult {
   nextState = logPush(nextState, `${player.name} ate the pile (${pileCards.length} cards).`);
 
   // Player stays as current — they can play again (or flip face-downs) with the new hand.
-  return { ok: true, state: stampAction(nextState, [{ type: 'eat', playerIdx: state.currentPlayerIdx }]) };
+  return { ok: true, state: stampAction(nextState, [{ type: 'eat', playerIdx: state.currentPlayerIdx, count: pileCards.length }]) };
 }
 
 /* ------------------------------------------------------------------ */
@@ -516,6 +498,7 @@ export function voluntaryEatPile(state: GameState): PlayResult {
 function endRound(state: GameState, winnerIdx: number): GameState {
   // Compute scores for each player.
   const newScores = [...state.scores];
+  const added = state.players.map(() => 0);
   state.players.forEach((p, i) => {
     if (i === winnerIdx) return; // 0 pts
     const remaining = [
@@ -524,6 +507,7 @@ function endRound(state: GameState, winnerIdx: number): GameState {
       ...p.faceDown.filter((c): c is Card => c !== null),
     ];
     const pts = remaining.reduce((sum, c) => sum + scoreValue(c), 0);
+    added[i] = pts;
     newScores[i] += pts;
   });
 
@@ -539,6 +523,7 @@ function endRound(state: GameState, winnerIdx: number): GameState {
     scores: newScores,
     winnerIdxThisRound: winnerIdx,
     gameWinnerIdx,
+    roundHistory: [...(state.roundHistory ?? []), added],
     events: [...(state.events ?? []), { type: 'roundEnd', playerIdx: winnerIdx }],
     log: [
       `${state.players[winnerIdx].name} went out!`,
@@ -546,19 +531,3 @@ function endRound(state: GameState, winnerIdx: number): GameState {
     ].slice(0, 12),
   };
 }
-
-/* ------------------------------------------------------------------ */
-/* Diagnostics                                                        */
-/* ------------------------------------------------------------------ */
-
-/** Returns top card values to render comparison in UI. Pure utility. */
-export function pileTop(state: GameState): Card | null {
-  return topOfPile(state.pile);
-}
-
-/** Returns true if it's the human's turn (any human, primarily for hot-seat). */
-export function isHumanTurn(state: GameState): boolean {
-  return state.players[state.currentPlayerIdx]?.isHuman ?? false;
-}
-
-export { compareValue };

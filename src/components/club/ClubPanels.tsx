@@ -2,7 +2,7 @@ import { useState } from 'react';
 import type { HouseRules } from '../../game/types';
 import type { Theme } from '../../theme';
 import type { Preferences } from '../../lib/preferences';
-import { ACHIEVEMENTS, loadProgression } from '../../lib/progression';
+import { ACHIEVEMENTS, dailyStreak, loadProgression } from '../../lib/progression';
 import { CardFace, Dialog, Icon, Toggle } from './Primitives';
 
 export function ComfortPanel({ preferences, onChange, theme, onThemeChange, sound, onSound, onClose }: {
@@ -24,7 +24,7 @@ export function ComfortPanel({ preferences, onChange, theme, onThemeChange, soun
 export function LearnPanel({ onClose, onPractice, rules }: { onClose: () => void; onPractice?: () => void; rules: HouseRules }) {
   const [step, setStep] = useState(0);
   const lessons = [
-    { title: 'A little lower. A little closer.', body: 'Your goal is to play all your cards. On your turn, play a card equal to or lower than the top card. Aces are low. You can play matching ranks together.', detail: 'A 5 can go on a 7. Select your card, then press Play cards.', ranks: ['7', '5'] as const },
+    { title: 'A little lower. A little closer.', body: 'Your goal is to play all your cards. On your turn, play a card equal to or lower than the top card. Aces are low. You can play matching ranks together.', detail: 'A 5 can go on a 7. Tap your card, then press Play. In a hurry? Flick the card up toward the pile.', ranks: ['7', '5'] as const },
     { title: 'Save a little magic.', body: rules.tenBurns ? 'A 10 can go on anything. It burns the whole pile, and you play again. When four matching ranks sit on top, they swipe the pile away too.' : 'With 10 burns switched off, a 10 plays between a 9 and a Jack. Play equal or lower, just like any other card.', detail: rules.fourOfAKindSwipes ? 'Complete four matching ranks on top to clear the pile and go again.' : 'Four-of-a-kind swipes are switched off at this table.', ranks: ['10', '10'] as const },
     { title: 'Your table has a few surprises.', body: 'Your four face-up cards can be played just like your hand cards. Play a face-up card to uncover the face-down card beneath it. On a later turn, you may choose to flip that card.', detail: 'Once revealed, a face-down card must be played. Add matching cards if you like, then confirm.', ranks: ['K', 'A'] as const },
     { title: 'Every hand has a way forward.', body: 'If none of your cards are equal or lower, play a higher rank and pick up the pile. Pile cards matching the rank you played stay on the table. A face-down card that is too high works the same way.', detail: 'You can also choose Take pile. You collect the entire pile and keep your turn.', ranks: ['3', 'Q'] as const },
@@ -43,7 +43,8 @@ export function LearnPanel({ onClose, onPractice, rules }: { onClose: () => void
 export function ProgressPanel({ onClose }: { onClose: () => void }) {
   const progress = loadProgression();
   return <Dialog title="Your little collection" eyebrow="THE JOY IS IN THE PLAYING" onClose={onClose} wide>
-    <div className="progress-stats"><div><b>{progress.gamesWon}</b><span>Games won</span></div><div><b>{progress.roundsWon}</b><span>Rounds won</span></div><div><b>{progress.totalSwipes}</b><span>Perfect swipes</span></div></div>
+    <div className="progress-stats"><div><b>{progress.gamesWon}</b><span>Games won</span></div><div><b>{progress.gamesCompleted ? `${Math.round((progress.gamesWon / progress.gamesCompleted) * 100)}%` : '–'}</b><span>Win rate</span></div><div><b>{progress.bestWinningScore ?? '–'}</b><span>Best winning score</span></div><div><b>{progress.bestWinStreak}</b><span>Best win streak</span></div></div>
+    <div className="progress-stats minor"><div><b>{progress.roundsWon}</b><span>Rounds won</span></div><div><b>{progress.totalSwipes}</b><span>Swipes</span></div><div><b>{progress.totalBurns}</b><span>Burns</span></div><div><b>{dailyStreak(progress)}</b><span>Daily streak</span></div></div>
     <p className="panel-intro">Small victories, lovely memories. Your milestones are saved on this device.</p>
     <div className="achievement-grid">{Object.values(ACHIEVEMENTS).map(achievement => {
       const earned = progress.achievements.some(item => item.id === achievement.id);

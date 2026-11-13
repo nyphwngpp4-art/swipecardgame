@@ -6,8 +6,11 @@ A warm, accessible, mobile-first version of the card game **Swipe**, built with 
 
 - **Three ways to play:** a configurable classic table, a shared daily deal, and a gentle practice table.
 - **Comfort-first play:** large cards by default, optional coaching, reduced motion, two table colours, sound controls, and adjustable computer-player pace.
-- **Clear turns:** cards are selected before they are committed, legal choices are highlighted, matching cards can be grouped, and potentially costly moves explain their result before play.
-- **Friendly progression:** local milestones, win history, automatic saves, and a full scorecard without accounts or tracking.
+- **One-screen table:** the pile, every opponent, your table cards, your whole hand and the action bar fit a single screen from a 360px phone to a desktop, with no scrolling. The hand is an overlapping fan that reflows as it grows.
+- **Clear turns:** cards are selected before they are committed, legal choices are highlighted, matching cards can be grouped (with a stepper for playing fewer), and potentially costly moves explain their result before play.
+- **Cards that move:** plays fly in from the seat that made them, burns and swipes clear the pile visibly, pickups travel to whoever took them, and each opponent's last move stays written at their seat.
+- **Fast when you want it:** flick a card up toward the pile to play it, or use the keyboard (rank keys select, Enter plays, H hints, Esc clears).
+- **Friendly progression:** twelve local milestones, win rate and streaks, a daily-deal streak with a shareable result, round-by-round scorecards, and automatic saves, all without accounts or tracking.
 - **Accessible controls:** keyboard-ready dialogs, visible focus states, WCAG AA colour contrast, and complete text labels for cards and controls.
 - **Offline-ready:** the production build includes an installable PWA and all fonts and sounds needed for play.
 
@@ -39,7 +42,8 @@ Node.js 22.12 or newer is required.
 
 ```bash
 npm run lint       # TypeScript
-npm test           # rules, regressions, and complete simulated games
+npm test           # rules, regressions, complete simulated games, and the AI difficulty ladder
+npm run bench:ai   # how the three computer difficulties score against each other
 npm run test:ui    # browser flows, responsive layouts, and WCAG AA checks
 npm run build      # production PWA
 ```
@@ -57,7 +61,8 @@ For Vercel: `vercel --prod` from the project root, or import the repo on the das
 
 - `src/game/` — pure game logic. Engine, rules, deck, AI. No React.
 - `src/hooks/useSwipeGame.ts` — coordinates game state, saving, sounds, and paced computer turns.
-- `src/components/club/` — the responsive lobby, card table, dialogs, scoring, tutorial, and comfort controls.
+- `src/components/club/` — the responsive lobby, card table, dialogs, scoring, tutorial, and comfort controls. `tableFx.ts` turns engine events into table animations.
+- `src/table.css` — the game table. Every card size derives from one `--hand-w` variable so the table scales as a unit.
 - `src/lib/preferences.ts` — local comfort settings.
 - `tests/club.spec.ts` — full browser and accessibility coverage.
 
@@ -75,10 +80,16 @@ play; see `src/lib/sound.ts`.
 
 ## Notes on the AI
 
-The current CPU is heuristic, not search-based. It:
-- Plays the most-copies-of-a-rank that's equal-or-lower, preferring higher legal ranks (saves low cards as defense).
-- Uses 10s as legal burns when no ordinary safe play exists.
-- When forced higher, dumps the highest-scoring rank with most copies.
-- Auto-chains matching cards on face-down flips.
+The CPU is heuristic, not search-based. It:
+- Plays the most copies of a rank that is equal-or-lower, preferring higher legal ranks (low cards are kept as exits).
+- Uses 10s as burns only when no ordinary play exists.
+- When forced higher, dumps the most expensive rank with the most copies.
+- Takes the pile voluntarily when that sets up a four of a kind.
 
-Gentle, balanced, and clever difficulties tune its decisions while keeping the same rules as the player.
+The three difficulties are measurably apart. Over 6,000 seeded rounds at mixed tables (`npm run bench:ai`), average points per round (lower is better) are roughly **38 gentle / 29 balanced / 22 clever**, with clever winning about 35% of its seats against 24% and 16%. `npm test` fails if the ladder collapses.
+
+- **Gentle** picks a random legal rank about half the time and sometimes plays fewer cards than it could.
+- **Balanced** settles for its second-best rank one turn in five.
+- **Clever** always takes its best-scoring play, values keeping low cards more, and dumps expensive cards once an opponent is close to going out.
+
+Tuning notes worth keeping: playing low to "block" a nearly-out neighbour, rushing face-up cards, and burning early all *cost* points in simulation, so the clever CPU does none of them. A determinized look-ahead search was also tried; at an affordable number of rollouts its move values were too noisy to beat the heuristic.

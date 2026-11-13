@@ -79,7 +79,8 @@ Launches fullscreen, works offline after first load, saves games locally.
   every move (`src/lib/persistence.ts`), clears on game over, and the start menu shows a
   Continue card. Before App Store launch, swap the storage calls for `@capacitor/preferences`
   so saves survive iOS storage eviction.
-- **Stats**: games played / won, best score — local only, shown on the start menu.
+- **Stats**: ✅ shipped (v0.4): games won, win rate, best score, win and daily streaks, twelve
+  milestones — local only, under "Your collection".
 - **Game Center**: leaderboard for lowest cumulative score, achievements ("First Swipe",
   "Burn 3 piles in one round"). `@capacitor-community/game-center` or defer to v1.1.
 - **Android**: `npx cap add android` reuses everything; Play Store is a $25 one-time fee.
@@ -92,3 +93,6 @@ Launches fullscreen, works offline after first load, saves games locally.
 - [ ] Airplane mode: app fully playable, fonts render
 - [ ] Backgrounding mid-animation, then resuming — animations recover
 - [ ] iPad: layout centers (max-width container already handles this)
+- [ ] Flick-to-play on a physical device: a card flicked toward the pile plays; a slow drag that
+      is released early does nothing; vertical flicks never scroll the page
+- [ ] Smallest supported phone (iPhone SE): whole table visible without scrolling
